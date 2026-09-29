@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="description" content="Corpus" />
+  <meta name="theme-color" content="#fefefe" media="(prefers-color-scheme: light)" />
+  <meta name="theme-color" content="#121212" media="(prefers-color-scheme: dark)" />
+  <title>Corpus</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%231e1e1e'/%3E%3Ccircle cx='23' cy='9' r='3' fill='%23f386a1'/%3E%3C/svg%3E" />
+  <link rel="manifest" href="/manifest.webmanifest" />
+  <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+  <link rel="icon" type="image/png" sizes="32x32" href="/icons/favicon-32.png" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-title" content="Corpus" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="application-name" content="Corpus" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&family=Instrument+Serif:ital@0;1&family=Hedvig+Letters+Serif:opsz@12..24&display=swap" />
+  <link rel="stylesheet" href="/styles.css?v=18" />
+  <script>
+    try { const t = JSON.parse(window.localStorage.getItem('corpus.prefs') || '{}').theme; if (t && t !== 'system') document.documentElement.dataset.theme = t; } catch {}
+  </script>
+</head>
+<body>
+  <header class="masthead">
+    <a class="wordmark" href="/" data-link>corpus</a>
+    <nav class="primary-nav" aria-label="Primary">
+      <a href="/" data-link data-nav="library">Library</a>
+      <a href="/inbox" data-link data-nav="inbox">Inbox <span class="nav-count" id="inbox-count"></span></a>
+      <a href="/ask" data-link data-nav="ask">Ask</a>
+      <a href="/taxonomy" data-link data-nav="taxonomy">Taxonomy</a>
+      <a href="/settings" data-link data-nav="settings">Settings</a>
+    </nav>
+    <label class="search" id="search-wrap">
+      <svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5 14 14"/></svg>
+      <input id="search" type="search" placeholder="Search" autocomplete="off" spellcheck="false" />
+      <kbd>/</kbd>
+    </label>
+    <button class="palette-trigger" data-palette aria-label="Command palette"><kbd class="mod-k">⌘K</kbd></button>
+  </header>
+
+  <main id="view" class="view"></main>
+
+  <div id="reader" class="reader" hidden>
+    <div class="reader-scrim" data-close></div>
+    <article class="reader-sheet" role="dialog" aria-modal="true" aria-label="Bookmark" tabindex="-1">
+      <div class="reader-bar">
+        <button class="ghost" data-close aria-label="Close">Close <kbd>esc</kbd></button>
+        <div class="reader-tabs segmented" role="tablist"><button data-rtab="read" aria-pressed="true">Read</button><button data-rtab="chat" aria-pressed="false">Chat</button></div>
+        <div class="reader-nav"><button class="ghost" data-step="-1" aria-label="Previous">↑ <kbd>k</kbd></button><button class="ghost" data-step="1" aria-label="Next">↓ <kbd>j</kbd></button></div>
+      </div>
+      <div id="reader-body" class="reader-body"></div>
+      <div id="reader-chat" class="reader-chat" hidden></div>
+    </article>
+  </div>
+
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+  <script src="/app.js?v=18" type="module"></script>
+</body>
+</html>

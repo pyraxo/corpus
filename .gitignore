@@ -1,0 +1,32 @@
+# Dependencies & local tools
+node_modules/
+.bin/
+
+# Secrets — keys, password hash, session secret, MCP token, X cookies
+.env
+.env.*
+!.env.example
+*.env
+*.pem
+*.key
+x-cookies.env
+
+# Personal data: the index, caches, overrides, chats, skills, saved pages
+data/
+public/data/
+dist/
+
+# Tunnel credentials and configs (see .cloudflared/.gitignore)
+.cloudflared/*
+!.cloudflared/.gitignore
+!.cloudflared/config.example.yml
+
+# Agent tooling, backups, logs, OS junk
+.agents/
+skills-lock.json
+.openai/
+*.bak
+*.bak.*
+*.bundle
+*.log
+.DS_Store

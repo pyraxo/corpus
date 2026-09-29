@@ -1,0 +1,4 @@
+# Tunnel credentials and real configs never leave this machine.
+*
+!.gitignore
+!config.example.yml
