@@ -67,6 +67,17 @@ Format is derived from the content. A thread is anything with two or more self-r
 
 Secrets go in the ignored `.env` (`TYPESAFE_API_KEY`, `OPENROUTER_API_KEY`, `CORPUS_PASSWORD_HASH`, `CORPUS_SESSION_SECRET`, `CORPUS_MCP_TOKEN`), which the server and scripts load on start.
 
+## Archive, Trash and undo
+
+- **Archive** keeps a bookmark out of the inbox. See it at `/archive` (Library → Status → Archived, or `g e`).
+- **Delete** moves a bookmark to **Trash** (`/trash`, `g d`). It stays restorable for 30 days, then it is purged. For X bookmarks that means a permanent hidden tombstone in Corpus's state; for saved web pages, removal from `data/manual.json`.
+- **Undo / redo** (`⌘Z` / `⇧⌘Z`) covers triage, tags, notes, deletes and bulk actions made in the app. Changes made by the assistant show receipts in Ask instead.
+- Corpus never writes to FieldTheory's files. It reads the export, and the server refuses to start if `data/` is inside FieldTheory's folder.
+
+## Shortcuts
+
+Every shortcut can be changed in Settings → Shortcuts (single keys, modifier combos like `⌘⇧Z`, or two-key sequences like `g l`). Press `?` for the current list.
+
 ## Agents & MCP
 
 Everything the site can do is one set of tools (`lib/ops.mjs`), shared by the Ask chat and an MCP server:

@@ -604,3 +604,25 @@ select.dd-native { display: none !important; }
   .skills { grid-template-columns: 1fr; }
   .s-control .dd-trigger { min-width: 0; width: 100%; }
 }
+
+/* ── archive / trash / undo / shortcut editor ───────────── */
+.r-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.r-actions .ghost[aria-pressed='true'] { background: var(--sunk); border-color: var(--ink-3); }
+.r-actions kbd, .triage-bar kbd { margin-left: 6px; }
+.triage .r-actions { display: none; }
+.pill.trash-pill { border-color: color-mix(in srgb, var(--accent) 50%, var(--rule-2)); color: var(--accent-ink); font-family: var(--mono); font-size: 10.5px; }
+.status-chip { background: var(--accent-ink); }
+.queue-links { display: flex; gap: 14px; font-size: 12.5px; }
+.queue-links a { color: var(--ink-3); text-decoration: none; }
+.queue-links a:hover { color: var(--ink); }
+.queue-links span { font: 10.5px var(--mono); margin-left: 3px; }
+.toast { display: flex; align-items: center; gap: 12px; }
+.toast button { color: inherit; font-weight: 600; text-decoration: underline; text-underline-offset: 3px; }
+.toast button kbd { color: inherit; opacity: 0.7; border-color: color-mix(in srgb, var(--bg) 40%, transparent); text-decoration: none; }
+.key-edit { display: flex; align-items: center; gap: 6px; }
+.key-btn { display: inline-flex; align-items: center; gap: 2px; min-height: 30px; padding: 3px 8px; border: 1px solid var(--rule-2); border-radius: 8px; background: var(--surface); }
+.key-btn:hover { border-color: var(--ink-3); }
+.key-btn kbd { margin: 0; }
+.key-rec { display: inline-flex; align-items: center; gap: 2px; min-height: 30px; padding: 3px 10px; border-radius: 8px; border: 1px dashed var(--accent); color: var(--accent-ink); font: 12px var(--mono); animation: pulse 0.9s infinite alternate; }
+.key-rec kbd { margin: 0; }
+.s-lede kbd { margin: 0 1px; }

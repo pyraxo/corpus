@@ -4,7 +4,8 @@ import fs from 'node:fs/promises';
 import { createReadStream } from 'node:fs';
 import path from 'node:path';
 import zlib from 'node:zlib';
-import { paths } from './lib/paths.mjs';
+import { paths, assertSeparateState } from './lib/paths.mjs';
+import { purgeTrash } from './lib/trash.mjs';
 import { build } from './lib/build.mjs';
 import { readState, writeState } from './lib/state.mjs';
 import { Enricher } from './lib/enricher.mjs';
@@ -208,11 +209,19 @@ const server = http.createServer(async (req, res) => {
           for (const id of ids.slice(0, 5000)) {
             const next = { ...(st.overrides[id] || {}) };
             for (const [k, v] of Object.entries(patch)) { if (v === null) delete next[k]; else next[k] = v; }
+            if (patch.deleted === true && !next.deletedAt) next.deletedAt = new Date().toISOString();
+            if (patch.deleted === null || patch.deleted === false) { delete next.deleted; delete next.deletedAt; }
             next.updatedAt = new Date().toISOString();
             st.overrides[id] = next;
           }
         });
         return send(res, 200, { ok: true, overrides: Object.fromEntries(ids.map(id => [id, s.overrides[id]])) });
+      }
+      if (route === 'PUT /api/overrides/restore') {
+        // Undo/redo: set each bookmark's override to an exact earlier snapshot (null = none).
+        const { entries = {} } = await readBody(req);
+        await writeState(st => { for (const [id, o] of Object.entries(entries).slice(0, 5000)) { if (o && Object.keys(o).length) st.overrides[id] = o; else delete st.overrides[id]; } });
+        return send(res, 200, { ok: true });
       }
       if (route === 'PUT /api/taxonomy') {
         // body: { id, patch } where patch null deletes a user concept / retires a default one
@@ -247,6 +256,7 @@ const server = http.createServer(async (req, res) => {
     }
     // Everything below requires a session, except the sign-in page and its stylesheet.
     // Installable without a session: manifest, service worker, icons, and the sign-in page's stylesheet.
+    if (url.pathname === '/connect.md') { const body = await fs.readFile(path.join(paths.root || process.cwd(), 'docs', 'connect.md'), 'utf8'); return send(res, 200, body, { 'content-type': 'text/markdown; charset=utf-8', 'cache-control': 'public, max-age=300' }); }
     const publicAsset = ['/styles.css', '/manifest.webmanifest', '/sw.js', '/favicon.ico'].includes(url.pathname) || url.pathname.startsWith('/icons/');
     if (!isAuthed(req) && !publicAsset) {
       if (url.pathname.startsWith('/data/')) return send(res, 401, { ok: false, error: 'Sign in required' });
@@ -268,7 +278,10 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
+assertSeparateState();
 await enricher.init();
+await purgeTrash({ log });
+setInterval(() => purgeTrash({ log }).catch(e => log(`[trash] ${e.message}`)), 6 * 3600_000).unref();
 const state = await readState();
 if (state.settings.enrich === false) enricher.paused = true;
 await checkSource();
