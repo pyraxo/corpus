@@ -4,7 +4,7 @@ A self-hosted home for your saved bookmarks. Corpus reads X bookmarks from [Fiel
 
 ![Corpus demo](docs/demo.gif)
 
-[Watch the demo with sound (49s)](docs/demo.mp4)
+[Watch the demo with sound (1:27)](docs/demo.mp4)
 
 Corpus keeps its own state in `data/` and never writes to your FieldTheory files.
 
