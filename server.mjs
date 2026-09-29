@@ -25,7 +25,8 @@ import crypto from 'node:crypto';
 
 const port = Number(process.env.PORT || 4173);
 const host = process.env.HOST || '127.0.0.1';
-const pollMs = Number(process.env.SOURCE_POLL_MS || 5 * 60_000);
+// Daily source check (UTC HH:MM), just after the Hermes FieldTheory sync at 23:00 UTC.
+const [checkH, checkM] = (process.env.SOURCE_CHECK_UTC || '23:30').split(':').map(Number);
 const defaultIds = new Set(defaultConcepts().map(c => c.id));
 const log = (m) => console.log(`${new Date().toISOString()} ${m}`);
 
@@ -340,5 +341,11 @@ setInterval(() => purgeTrash({ log }).catch(e => log(`[trash] ${e.message}`)), 6
 const state = await readState();
 if (state.settings.enrich === false) enricher.paused = true;
 await checkSource();
-setInterval(checkSource, pollMs).unref();
+function scheduleSourceCheck() {
+  const now = new Date(), next = new Date(now);
+  next.setUTCHours(checkH, checkM || 0, 0, 0);
+  if (next <= now) next.setUTCDate(next.getUTCDate() + 1);
+  setTimeout(() => { checkSource(); scheduleSourceCheck(); }, next - now).unref();
+}
+scheduleSourceCheck();
 server.listen(port, host, () => log(`Corpus listening at http://${host}:${port}`));

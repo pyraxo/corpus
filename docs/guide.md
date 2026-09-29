@@ -23,7 +23,7 @@ Press `⌘K` (or `Ctrl K`) for the command palette. It searches bookmarks, jumps
 npm start            # http://127.0.0.1:4173
 ```
 
-The server rebuilds the index whenever the FieldTheory JSONL changes (checked every 5 minutes), so the daily Hermes sync flows in without any extra cron job. **Rebuild now** in Settings forces a rebuild.
+The server rebuilds the index whenever the FieldTheory JSONL changes (checked daily at 23:30 UTC, half an hour after the Hermes sync; set `SOURCE_CHECK_UTC` to change it), so the daily sync flows in without any extra cron job. **Rebuild now** in Settings forces a rebuild.
 
 ## Backfill: threads, then Jev
 
