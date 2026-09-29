@@ -1,6 +1,6 @@
 // Corpus service worker: installable app shell, offline reading, fast repeat loads.
 // Never caches the API, chat, MCP or the sign-in page.
-const VERSION = 'corpus-v21';
+const VERSION = 'corpus-v22';
 const SHELL = ['/', '/app.js?v=20', '/dropdown.js?v=20', '/styles.css?v=20', '/manifest.webmanifest', '/icons/icon-192.png', '/icons/apple-touch-icon.png'];
 const SHELL_CACHE = `${VERSION}-shell`, DATA_CACHE = 'corpus-data', MEDIA_CACHE = 'corpus-media';
 const MEDIA_MAX = 400;
