@@ -105,6 +105,12 @@ async function readBody(req) {
   return chunks.length ? JSON.parse(Buffer.concat(chunks).toString('utf8')) : {};
 }
 
+function originOf(req) {
+  if (process.env.CORPUS_PUBLIC_URL) return process.env.CORPUS_PUBLIC_URL.replace(/\/+$/, '');
+  const https = req.headers['x-forwarded-proto'] === 'https' || !!req.headers['cf-visitor']?.includes('https');
+  return `${https ? 'https' : 'http'}://${req.headers['x-forwarded-host'] || req.headers.host || `localhost:${port}`}`;
+}
+
 async function serveFile(req, res, file, cache) {
   const stat = await fs.stat(file);
   if (!stat.isFile()) throw new Error('not a file');
@@ -117,6 +123,15 @@ async function serveFile(req, res, file, cache) {
   if (base === 'index.html') headers['x-corpus-page'] = 'app';
   if (base === 'login.html') headers['x-corpus-page'] = 'login';
   if (base === 'sw.js') headers['service-worker-allowed'] = '/';
+  // Link previews need absolute URLs, so pages carry %ORIGIN% for the public address.
+  if (ext === '.html') {
+    const html = Buffer.from((await fs.readFile(file, 'utf8')).replaceAll('%ORIGIN%', originOf(req)));
+    const gzip = /\bgzip\b/.test(req.headers['accept-encoding'] || '');
+    const body = gzip ? zlib.gzipSync(html) : html;
+    res.writeHead(200, { ...headers, ...(gzip && { 'content-encoding': 'gzip', vary: 'accept-encoding' }), 'content-length': body.length });
+    res.end(body);
+    return;
+  }
   const compressible = ['.json', '.js', '.css', '.html', '.svg'].includes(ext) && /\bgzip\b/.test(req.headers['accept-encoding'] || '');
   if (compressible) { res.writeHead(200, { ...headers, 'content-encoding': 'gzip', vary: 'accept-encoding' }); createReadStream(file).pipe(zlib.createGzip()).pipe(res); }
   else { res.writeHead(200, { ...headers, 'content-length': stat.size }); createReadStream(file).pipe(res); }
@@ -292,7 +307,9 @@ const server = http.createServer(async (req, res) => {
       return send(res, 404, { ok: false, error: 'Unknown endpoint' });
     }
     // Everything below requires a session, except the sign-in page and its stylesheet.
-    // Installable without a session: manifest, service worker, icons, and the sign-in page's stylesheet.
+    // Installable without a session: manifest, service worker, icons, the sign-in page's stylesheet,
+    // and the link-preview image.
+    if (url.pathname === '/og.png') return await serveFile(req, res, path.join(paths.public, 'og.png'), 'public, max-age=86400');
     if (url.pathname === '/connect.md') { const body = await fs.readFile(path.join(paths.root || process.cwd(), 'docs', 'connect.md'), 'utf8'); return send(res, 200, body, { 'content-type': 'text/markdown; charset=utf-8', 'cache-control': 'public, max-age=300' }); }
     const publicAsset = ['/styles.css', '/manifest.webmanifest', '/sw.js', '/favicon.ico'].includes(url.pathname) || url.pathname.startsWith('/icons/');
     if (!isAuthed(req) && !publicAsset) {
