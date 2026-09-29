@@ -4,6 +4,7 @@ import fs from 'node:fs/promises';
 import { createReadStream } from 'node:fs';
 import path from 'node:path';
 import zlib from 'node:zlib';
+import { spawn } from 'node:child_process';
 import { paths, assertSeparateState } from './lib/paths.mjs';
 import { purgeTrash } from './lib/trash.mjs';
 import { build } from './lib/build.mjs';
@@ -13,9 +14,10 @@ import { defaultConcepts } from './lib/taxonomy.mjs';
 import { lockHolder } from './lib/lock.mjs';
 import { requestPriority } from './lib/priority.mjs';
 import { authEnabled, isAuthed, login, logoutCookie } from './lib/auth.mjs';
-import { classifyMany, needsClassification } from './lib/jev.mjs';
+import { classifyMany, needsClassification, testTypesafeKey } from './lib/jev.mjs';
 import { SearchIndex } from './lib/search.mjs';
-import { MODELS, runChat, listChats, getChat, deleteChat } from './lib/chat.mjs';
+import { MODELS, runChat, listChats, getChat, deleteChat, setChatArchived, testOpenRouterKey } from './lib/chat.mjs';
+import { KEY_NAMES, initKeys, keysStatus, setKey } from './lib/keys.mjs';
 import { createOps } from './lib/ops.mjs';
 import { handleMcp } from './lib/mcp.mjs';
 import { listSkills } from './lib/skills.mjs';
@@ -138,7 +140,12 @@ async function status() {
     source,
     enrichment: { ...enricher.status(), enabled: state.settings.enrich !== false },
     classifiers: { typesafe: !!process.env.TYPESAFE_API_KEY, openrouter: !!process.env.OPENROUTER_API_KEY },
-    chat: { models: MODELS.map(({ id, label, note }) => ({ id, label, note })), available: !!process.env.OPENROUTER_API_KEY },
+    chat: {
+      models: MODELS.filter(m => !state.settings.disabledModels?.includes(m.id)).map(({ id, label, note }) => ({ id, label, note })),
+      allModels: MODELS.map(({ id, label, note }) => ({ id, label, note, enabled: !state.settings.disabledModels?.includes(id) })),
+      available: !!process.env.OPENROUTER_API_KEY
+    },
+    keys: await keysStatus(),
     passwordProtected: authEnabled()
   };
 }
@@ -184,9 +191,32 @@ const server = http.createServer(async (req, res) => {
       if (route === 'GET /api/skills') return send(res, 200, { skills: await listSkills() });
       if (route === 'GET /api/mcp') return send(res, 200, { url: `${req.headers['x-forwarded-proto'] === 'https' || req.headers['cf-visitor'] ? 'https' : 'http'}://${req.headers.host}/mcp`, token: mcpToken || null, tools: ops.tools.length });
       if (route === 'POST /api/ops') { const { tool, args } = await readBody(req); try { return send(res, 200, await ops.call(tool, args)); } catch (e) { return send(res, 400, { ok: false, error: e.message }); } }
-      if (route === 'GET /api/chats') return send(res, 200, { chats: await listChats({ scope: url.searchParams.get('scope'), bookmark: url.searchParams.get('bookmark') }) });
+      if (route === 'GET /api/chats') return send(res, 200, { chats: await listChats({ scope: url.searchParams.get('scope'), bookmark: url.searchParams.get('bookmark'), archived: url.searchParams.get('archived') === '1' }) });
       if (req.method === 'GET' && url.pathname.startsWith('/api/chats/')) { const c = await getChat(url.pathname.split('/').pop()); return c ? send(res, 200, c) : send(res, 404, { ok: false }); }
+      if (req.method === 'PUT' && url.pathname.startsWith('/api/chats/')) {
+        const { archived } = await readBody(req);
+        const c = await setChatArchived(url.pathname.split('/').pop(), archived);
+        return c ? send(res, 200, { ok: true, chat: c }) : send(res, 404, { ok: false });
+      }
       if (req.method === 'DELETE' && url.pathname.startsWith('/api/chats/')) { await deleteChat(url.pathname.split('/').pop()); return send(res, 200, { ok: true }); }
+      if (route === 'GET /api/keys') return send(res, 200, { keys: await keysStatus() });
+      if (route === 'PUT /api/keys') {
+        const { name, value } = await readBody(req);
+        if (!KEY_NAMES.includes(name)) return send(res, 400, { ok: false, error: 'Unknown key' });
+        await setKey(name, value);
+        return send(res, 200, { ok: true, keys: await keysStatus() });
+      }
+      if (route === 'POST /api/keys/test') {
+        const { name, value } = await readBody(req);
+        if (!KEY_NAMES.includes(name)) return send(res, 400, { ok: false, error: 'Unknown key' });
+        const apiKey = value || process.env[name];
+        if (!apiKey) return send(res, 400, { ok: false, error: 'No key to test' });
+        try {
+          if (name === 'OPENROUTER_API_KEY') await testOpenRouterKey(apiKey);
+          else await testTypesafeKey(apiKey);
+          return send(res, 200, { ok: true });
+        } catch (e) { return send(res, 200, { ok: false, error: e.message }); }
+      }
       if (route === 'POST /api/chat') {
         const now = Date.now();
         while (chatWindow.length && chatWindow[0] < now - 3600_000) chatWindow.shift();
@@ -243,9 +273,16 @@ const server = http.createServer(async (req, res) => {
       }
       if (route === 'PUT /api/settings') {
         const patch = await readBody(req);
+        if (patch.disabledModels && patch.disabledModels.length >= MODELS.length) return send(res, 400, { ok: false, error: 'At least one model must stay enabled' });
         const s = await writeState(st => { Object.assign(st.settings, patch); });
         if ('enrich' in patch) { enricher.paused = patch.enrich === false; if (!enricher.paused) enricher.kick(); }
         return send(res, 200, { ok: true, settings: s.settings });
+      }
+      if (route === 'POST /api/backfill') {
+        if (lockHolder()) return send(res, 200, { ok: false, error: 'Backfill already running' });
+        const child = spawn(process.execPath, [path.join(paths.root, 'scripts', 'backfill.mjs')], { detached: true, stdio: 'ignore', cwd: paths.root, env: process.env });
+        child.unref();
+        return send(res, 200, { ok: true });
       }
       if (route === 'POST /api/refresh') {
         sourceMtime = 0;
@@ -279,6 +316,7 @@ const server = http.createServer(async (req, res) => {
 });
 
 assertSeparateState();
+await initKeys();
 await enricher.init();
 await purgeTrash({ log });
 setInterval(() => purgeTrash({ log }).catch(e => log(`[trash] ${e.message}`)), 6 * 3600_000).unref();

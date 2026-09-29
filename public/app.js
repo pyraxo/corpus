@@ -80,11 +80,25 @@ function tagsOf(r) {
 const tagIds = (r) => tagsOf(r).map(t => t.id);
 const formatOf = (r) => tagIds(r).find(id => facetOf(id) === 'format') || r.format;
 const triage = (r) => store.overrides[r.id]?.triaged || null;
+// Read is a label on a bookmark, not a triage status; deleted bookmarks don't carry it.
+const isRead = (r) => { const o = store.overrides[r.id]; return !!o?.read && !o.deleted; };
+
+// The stack: a short reading list of at most five, first in first out — adding a sixth lets the oldest go.
+const STACK_MAX = 5;
+const stackAll = () => Object.entries(store.overrides)
+  .filter(([id, o]) => o.stackedAt && !o.deleted && store.byId.has(id))
+  .sort((a, b) => a[1].stackedAt.localeCompare(b[1].stackedAt))
+  .map(([id]) => store.byId.get(id));
+const stackList = () => stackAll().slice(-STACK_MAX);
+// Media-only posts have no text to title them by.
+const titleOf = (r, n) => r.article?.title || r.title || snippet(r, n) || r.card?.title || `${label(formatOf(r))} from @${r.author.handle}`;
+const minutes = (r) => Math.max(1, Math.round(readLen(r) / 1100));
+const readWhen = (iso) => { const d = relDate(iso); return d === 'now' ? 'just now' : /^\d+[mhd]$/.test(d) ? `${d} ago` : d; };
 
 function haystack(r) {
   let h = store.hay.get(r.id);
   if (h) return h;
-  h = [r.title, r.text, r.author.name, r.author.handle, ...(r.thread || []).map(t => t.text), r.article?.title, ...(r.article?.blocks || []).slice(0, 60).map(b => b.text || ''), r.card?.title, r.card?.description, r.card?.domain, r.quoted?.text, ...tagIds(r).map(label), store.overrides[r.id]?.note].filter(Boolean).join(' ').toLowerCase();
+  h = [r.title, r.text, r.author.name, r.author.handle, ...(r.thread || []).map(t => t.text), r.article?.title, ...(r.article?.blocks || []).slice(0, 60).map(b => b.text || ''), r.card?.title, r.card?.description, r.card?.domain, r.quoted?.text, ...(r.quoted?.thread || []).map(t => t.text), r.quoted?.article?.title, ...(r.quoted?.article?.blocks || []).slice(0, 60).map(b => b.text || ''),...tagIds(r).map(label), store.overrides[r.id]?.note].filter(Boolean).join(' ').toLowerCase();
   store.hay.set(r.id, h);
   return h;
 }
@@ -121,7 +135,7 @@ function statusOk(r, status) {
   return true;
 }
 
-const SORTS = [['bookmarked', 'Recently saved'], ['oldest', 'Oldest saved'], ['posted', 'Newest posted'], ['posted-old', 'Oldest posted'], ['saves', 'Most saved'], ['likes', 'Most liked'], ['longest', 'Longest reads'], ['shortest', 'Quickest reads']];
+const SORTS = [['bookmarked', 'Recently saved'], ['oldest', 'Oldest saved'], ['posted', 'Newest posted'], ['posted-old', 'Oldest posted'], ['saves', 'Most saved'], ['likes', 'Most liked'], ['longest', 'Longest reads'], ['shortest', 'Quickest reads'], ['read', 'Recently read'], ['random', 'Random']];
 const FORMAT_TABS = [['all', 'All'], ['format:thread', 'Threads'], ['format:article', 'Articles'], ['format:link', 'Links'], ['format:repo', 'Repos'], ['format:video', 'Video'], ['format:image', 'Images'], ['format:quote', 'Quotes'], ['format:post', 'Posts']];
 const WINDOWS = [['all', 'Any time'], ['7d', 'Last 7 days'], ['30d', 'Last 30 days'], ['90d', 'Last 90 days'], ['older', 'Older than 30 days']];
 
@@ -130,7 +144,21 @@ function readLen(r) {
   if (r._len != null) return r._len;
   let n = r.thread ? r.thread.reduce((s, t) => s + (t.text?.length || 0), 0) : (r.text?.length || 0);
   if (r.article) n += r.article.blocks.reduce((s, b) => s + (b.text?.length || 0), 0);
+  // A fully captured quoted thread or article is part of the read.
+  const q = r.quoted;
+  if (q?.thread) n += q.thread.reduce((s, t) => s + (t.text?.length || 0), 0);
+  if (q?.article) n += q.article.blocks.reduce((s, b) => s + (b.text?.length || 0), 0);
   return (r._len = n);
+}
+
+// Stable per-record random keys: reshuffled on demand (reshuffleRandomSort), otherwise cached
+// so re-renders (search, pagination, filters) don't jump the order around under the reader.
+let randomOrder = new Map();
+function reshuffleRandomSort() { randomOrder.clear(); }
+function randomKey(r) {
+  let k = randomOrder.get(r.id);
+  if (k == null) { k = Math.random(); randomOrder.set(r.id, k); }
+  return k;
 }
 
 function sortRecords(list, sort) {
@@ -143,7 +171,9 @@ function sortRecords(list, sort) {
     saves: (a, b) => eng(b, 'bookmarkCount') - eng(a, 'bookmarkCount'),
     likes: (a, b) => eng(b, 'likeCount') - eng(a, 'likeCount'),
     longest: (a, b) => readLen(b) - readLen(a) || b.order - a.order,
-    shortest: (a, b) => readLen(a) - readLen(b) || b.order - a.order
+    shortest: (a, b) => readLen(a) - readLen(b) || b.order - a.order,
+    read: (a, b) => String(store.overrides[b.id]?.readAt || '').localeCompare(String(store.overrides[a.id]?.readAt || '')) || b.order - a.order,
+    random: (a, b) => randomKey(a) - randomKey(b)
   }[sort] || ((a, b) => b.order - a.order);
   return list.sort(by);
 }
@@ -167,19 +197,31 @@ function applySnap(entries) {
   for (const [id, o] of Object.entries(entries)) { if (o) store.overrides[id] = o; else delete store.overrides[id]; store.tagCache.delete(id); store.hay.delete(id); }
 }
 
+function patchLocal(id, patch, now = new Date().toISOString()) {
+  const next = { ...(store.overrides[id] || {}) };
+  for (const [k, v] of Object.entries(patch)) { if (v === null) delete next[k]; else next[k] = v; }
+  if (patch.deleted === true && !next.deletedAt) next.deletedAt = now;
+  if (patch.deleted === null) delete next.deletedAt;
+  store.overrides[id] = next; store.tagCache.delete(id); store.hay.delete(id);
+}
+function pushUndo(label, ids, before) { undoStack.push({ label, ids, before, after: snap(ids) }); if (undoStack.length > 100) undoStack.shift(); redoStack.length = 0; }
+
 async function saveOverride(ids, patch, { label = 'Change', undoable = true } = {}) {
   const before = snap(ids);
   const now = new Date().toISOString();
-  for (const id of ids) {
-    const next = { ...(store.overrides[id] || {}) };
-    for (const [k, v] of Object.entries(patch)) { if (v === null) delete next[k]; else next[k] = v; }
-    if (patch.deleted === true && !next.deletedAt) next.deletedAt = now;
-    if (patch.deleted === null) delete next.deletedAt;
-    store.overrides[id] = next; store.tagCache.delete(id); store.hay.delete(id);
-  }
-  if (undoable) { undoStack.push({ label, ids, before, after: snap(ids) }); if (undoStack.length > 100) undoStack.shift(); redoStack.length = 0; }
+  for (const id of ids) patchLocal(id, patch, now);
+  if (undoable) pushUndo(label, ids, before);
   try { await api('/api/overrides', { method: 'PUT', body: { ids, patch } }); }
   catch (e) { toast(`Not saved: ${e.message}`); }
+}
+
+// Different patches for different bookmarks, saved and undone as one change.
+async function saveEach(patches, { label = 'Change' } = {}) {
+  const ids = Object.keys(patches);
+  const before = snap(ids);
+  for (const [id, patch] of Object.entries(patches)) patchLocal(id, patch);
+  pushUndo(label, ids, before);
+  await persistSnap(snap(ids));
 }
 
 async function persistSnap(entries) {
@@ -287,11 +329,13 @@ function byline(r, withDate = true) {
   return `<div class="byline">${avatar(r.author)}<span class="name">${esc(r.author.name)}</span><span class="handle">@${esc(r.author.handle)}</span>${withDate ? `<span class="date">${relDate(r.postedAt)}</span>` : ''}</div>`;
 }
 
+const readMark = (r) => isRead(r) ? `<span class="read-mark" title="Read ${esc(fullDate(store.overrides[r.id].readAt))}"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m3.5 8.4 2.8 2.8 6.2-6.4"/></svg>Read</span>` : '';
+
 function listItem(r) {
   const v = visual(r);
   return `<article class="row" data-open="${r.id}" tabindex="0">
     <div class="row-main">${byline(r)}<h3>${esc(r.title || snippet(r, 90))}</h3><p class="row-snippet">${esc(snippet(r, 240, { afterTitle: true }))}</p>
-    <div class="meta">${formatBadge(r)}${daysLeft(r) != null ? `<span class="pill trash-pill">${daysLeft(r)}d left</span>` : ''}${tagPills(r)}${triage(r) ? `<span class="state">${triage(r)}</span>` : ''}</div></div>
+    <div class="meta">${formatBadge(r)}${daysLeft(r) != null ? `<span class="pill trash-pill">${daysLeft(r)}d left</span>` : ''}${tagPills(r)}${triage(r) ? `<span class="state">${triage(r)}</span>` : ''}${readMark(r)}</div></div>
     ${v ? `<div class="row-thumb"><img src="${esc(v.url)}" alt="" loading="lazy" referrerpolicy="no-referrer"></div>` : ''}
   </article>`;
 }
@@ -301,7 +345,7 @@ function gridItem(r) {
   return `<article class="card" data-open="${r.id}" tabindex="0">
     ${v ? mediaTile({ ...v, w: 16, h: 10 }, 'fixed') : `<div class="card-type">${esc(snippet(r, 160))}</div>`}
     <div class="card-body">${byline(r)}<h3>${esc(r.title || snippet(r, 90))}</h3>${v ? `<p class="card-snippet">${esc(snippet(r, 140, { afterTitle: true }))}</p>` : ''}
-    <div class="meta">${formatBadge(r)}${tagPills(r)}</div></div>
+    <div class="meta">${formatBadge(r)}${tagPills(r)}${readMark(r)}</div></div>
   </article>`;
 }
 
@@ -319,7 +363,7 @@ function wallItem(r) {
   else body = `${v ? mediaTile(v) : ''}${text ? `<div class="tile-pad"><p>${esc(text.length > 420 ? `${text.slice(0, 420).replace(/\s+\S*$/, '')}…` : text)}</p></div>` : ''}`;
   const left = daysLeft(r);
   const pills = (left != null ? `<span class="pill trash-pill">${left}d left</span>` : '') + tagPills(r);
-  return `<article class="tile" data-open="${r.id}" tabindex="0">${body}${pills ? `<div class="tile-tags">${pills}</div>` : ''}<footer class="tile-foot">${byline(r, false)}<span class="date">${relDate(r.postedAt)}</span></footer></article>`;
+  return `<article class="tile" data-open="${r.id}" tabindex="0">${body}${pills ? `<div class="tile-tags">${pills}</div>` : ''}<footer class="tile-foot">${byline(r, false)}${readMark(r)}<span class="date">${relDate(r.postedAt)}</span></footer></article>`;
 }
 
 function estimateHeight(r, colWidth) {
@@ -345,6 +389,7 @@ function renderLibrary() {
     <div class="rail-scrim ${ui.mobileRail ? 'open' : ''}" data-rail-close></div>
     <aside class="rail ${ui.mobileRail ? 'open' : ''}" aria-label="Filters">${renderRail()}</aside>
     <section class="stage">
+      ${ui.status === 'active' && !ui.query && !ui.filters.size ? stackHtml() : ''}
       <div class="toolbar">
         <div class="toolbar-left">
           <span class="count">${num.format(results.length)}</span>
@@ -407,6 +452,27 @@ function setRail(open) {
   $('.rail-scrim')?.classList.toggle('open', open);
   $('.rail-toggle')?.setAttribute('aria-expanded', open);
   document.body.classList.toggle('rail-locked', open);
+}
+
+// Up to five chosen reads, oldest first; empty places stay as quiet outlines.
+function stackHtml() {
+  const stack = stackList();
+  if (!stack.length) return '';
+  const full = stack.length === STACK_MAX;
+  const items = stack.map((r, i) => `<li class="stack-item" data-open="${r.id}" tabindex="0">
+      <span class="stack-n">${i + 1}</span>
+      <div class="stack-body">
+        <span class="stack-by">${esc(r.author.name)}</span>
+        <h3>${esc(titleOf(r, 90))}</h3>
+        <span class="stack-meta">${label(formatOf(r))}${r.thread ? ` · ${r.thread.length}` : ''} · ${minutes(r)} min${full && i === 0 ? '<em>next to go</em>' : ''}</span>
+      </div>
+      <button class="stack-x" data-unstack="${r.id}" aria-label="Take off the stack" title="Take off the stack">×</button>
+    </li>`).join('');
+  const slots = Array.from({ length: STACK_MAX - stack.length }, () => '<li class="stack-slot" aria-hidden="true"></li>').join('');
+  return `<section class="stack" aria-label="Reading stack">
+    <header class="stack-head"><h2 class="serif">The stack</h2><span class="stack-count">${stack.length}<span>/${STACK_MAX}</span></span><p class="muted small">${full ? 'Full — the next one you add lets the oldest go.' : 'Read these next.'}</p></header>
+    <ol class="stack-list">${items}${slots}</ol>
+  </section>`;
 }
 
 function renderRail() {
@@ -474,6 +540,42 @@ function inboxControls(base) {
     </div>`;
 }
 
+// Virtualized queue list: only the rows near the scrollport are ever in the DOM, so scrolling
+// works over the whole queue (thousands of bookmarks) instead of a small window around the current item.
+const QUEUE_ROW_H = 64; // must match .queue li's fixed height in styles.css
+const QUEUE_OVERSCAN = 8;
+let queueScrollRaf = 0;
+const queueRowHtml = (r, top, currentId) => {
+  const title = (r.title || snippet(r, 80)).slice(0, 90);
+  // Omit the title line entirely when there's no text yet (pending capture) — an empty span
+  // still reserves its line's height in the fixed-height row, leaving an ugly gap.
+  return `<li class="${r.id === currentId ? 'on' : ''}" style="top:${top}px" data-pick="${r.id}"><span class="q-author"><span class="q-name">${esc(r.author.name)}</span><span class="q-date">${relDate(r.postedAt)}</span></span>${title ? `<span class="q-title">${esc(title)}</span>` : ''}<span class="q-meta">${label(formatOf(r))}${r.thread ? ` · ${r.thread.length}` : ''}</span></li>`;
+};
+
+function renderQueueRows() {
+  const listEl = $('#queue-list'), scrollerEl = $('.queue');
+  if (!listEl || !scrollerEl) return;
+  const queue = ui.inboxQueue || [];
+  const viewportH = scrollerEl.clientHeight || 0;
+  const scrollTop = Math.max(0, scrollerEl.scrollTop - listEl.offsetTop);
+  const start = Math.max(0, Math.floor(scrollTop / QUEUE_ROW_H) - QUEUE_OVERSCAN);
+  const end = Math.min(queue.length, Math.ceil((scrollTop + viewportH) / QUEUE_ROW_H) + QUEUE_OVERSCAN);
+  listEl.innerHTML = queue.slice(start, end).map((r, i) => queueRowHtml(r, (start + i) * QUEUE_ROW_H, ui.inboxId)).join('');
+}
+function handleQueueScroll() { cancelAnimationFrame(queueScrollRaf); queueScrollRaf = requestAnimationFrame(renderQueueRows); }
+
+// Scrolls the queue so the given bookmark's row is in view, then repaints the visible rows.
+function ensureQueueVisible(id) {
+  const scrollerEl = $('.queue'), listEl = $('#queue-list');
+  if (!scrollerEl || !listEl) return;
+  const idx = (ui.inboxQueue || []).findIndex(r => r.id === id);
+  if (idx < 0) return;
+  const top = listEl.offsetTop + idx * QUEUE_ROW_H, bottom = top + QUEUE_ROW_H;
+  if (top < scrollerEl.scrollTop) scrollerEl.scrollTop = top;
+  else if (bottom > scrollerEl.scrollTop + scrollerEl.clientHeight) scrollerEl.scrollTop = bottom - scrollerEl.clientHeight;
+  renderQueueRows();
+}
+
 function renderInbox() {
   const base = inboxBase();
   const queue = inboxQueue();
@@ -484,22 +586,47 @@ function renderInbox() {
   if (!base.length && prefs.inboxWindow === 'all') { view().innerHTML = `<div class="inbox-empty"><p class="serif big">Inbox zero.</p><p class="muted">New bookmarks from FieldTheory land here.</p></div>`; return; }
   const idx = current ? queue.indexOf(current) : -1;
   const head = `<div class="queue-head"><div class="queue-count"><span class="count">${num.format(queue.length)}</span><span class="muted">to triage${queue.length !== base.length ? ` · ${num.format(base.length)} in window` : ''}</span></div><div class="queue-links"><a href="/archive" data-link>Archive <span>${num.format(store.records.filter(x => statusOk(x, 'archived')).length)}</span></a><a href="/trash" data-link>Trash <span>${num.format(store.records.filter(x => statusOk(x, 'deleted')).length)}</span></a></div>${inboxControls(base)}</div>`;
-  const list = current ? `<ol id="queue-list">${queue.slice(Math.max(0, idx - 3), idx + 60).map(r => `<li class="${r.id === current.id ? 'on' : ''}" data-pick="${r.id}"><span class="q-author">${esc(r.author.name)}<span class="q-date">${relDate(r.postedAt)}</span></span><span class="q-title">${esc((r.title || snippet(r, 80)).slice(0, 90))}</span><span class="q-meta">${label(formatOf(r))}${r.thread ? ` · ${r.thread.length}` : ''}</span></li>`).join('')}</ol>` : '';
+  const prevScroll = $('.queue')?.scrollTop || 0;
+  const list = current ? `<ol id="queue-list" style="height:${queue.length * QUEUE_ROW_H}px"></ol>` : '';
   const main = current ? `
-      <div class="triage-scroll"><div class="reader-body inline" id="triage-body">${readerContent(current)}</div></div>
+      <div class="triage-main">
+      <div class="triage-scroll"><div class="reader-body inline" id="triage-body">${readerContent(current, { docked: true })}</div></div>
+      <div class="triage-dock">
+      <div class="dock-meta">
+        <div class="tag-editor" data-tags="${current.id}">${tagEditor(current)}</div>
+        <textarea class="note" data-note="${current.id}" rows="1" placeholder="Note — why you saved this">${esc(store.overrides[current.id]?.note || '')}</textarea>
+      </div>
       <div class="triage-bar">
         <button class="primary" data-triage="kept">Keep ${keyHint('inbox.keep')}</button>
         <button class="ghost" data-triage="archived">Archive ${keyHint('inbox.archive')}</button>
         <button class="ghost" data-skip>Skip ${keyHint('inbox.next')}</button>
         <button class="ghost danger" data-triage="deleted">Delete ${keyHint('inbox.delete')}</button>
+        <button class="ghost ask-ai" data-inbox-ask aria-pressed="${!!ui.inboxChat}">Ask AI ${keyHint('inbox.ask')}</button>
         <span class="muted small">${idx + 1} of ${num.format(queue.length)}</span>
-      </div>` : `<div class="inbox-empty"><p class="serif">Nothing to triage here.</p><button class="ghost" data-inbox-clear>Reset filters</button></div>`;
-  view().innerHTML = `<aside class="queue" aria-label="Queue">${head}${list}</aside><section class="triage">${main}</section>`;
-  if (current) captureNow(current);
+      </div>
+      </div>
+      </div>${ui.inboxChat ? inboxChatHtml(current) : ''}` : `<div class="inbox-empty"><p class="serif">Nothing to triage here.</p><button class="ghost" data-inbox-clear>Reset filters</button></div>`;
+  view().innerHTML = `<aside class="queue" aria-label="Queue">${head}${list}</aside><section class="triage ${current && ui.inboxChat ? 'with-chat' : ''}">${main}</section>`;
+  if (current) {
+    captureNow(current);
+    if (ui.inboxChat) loadInboxChat(current.id);
+    const scrollerEl = $('.queue');
+    scrollerEl.scrollTop = prevScroll;
+    renderQueueRows();
+    scrollerEl.addEventListener('scroll', handleQueueScroll, { passive: true });
+  }
 }
 
 const TRIAGE_LABEL = { kept: 'Keep', archived: 'Archive', deleted: 'Move to Trash' };
 const triagePatch = (v) => v === 'deleted' ? { deleted: true } : { triaged: v };
+// On mobile .triage-scroll doesn't scroll itself (overflow: visible, the page scrolls instead),
+// so resetting its own scrollTop isn't enough — scroll it into view too.
+function scrollTriageTop() {
+  const ts = $('.triage-scroll');
+  if (!ts) return;
+  ts.scrollTop = 0;
+  ts.scrollIntoView({ block: 'start' });
+}
 async function triageCurrent(value) {
   const r = store.byId.get(ui.inboxId);
   if (!r) return;
@@ -510,35 +637,44 @@ async function triageCurrent(value) {
   ui.inboxId = next?.id || null;
   updateInboxCount();
   renderInbox();
-  $('.triage-scroll')?.scrollTo(0, 0);
+  scrollTriageTop();
 }
 
 // ── reader ──────────────────────────────────────────────────────────────
-function readerContent(r) {
+// docked: the inbox pins tags and note in a bar below the post instead.
+function readerContent(r, { docked = false } = {}) {
   const o = store.overrides[r.id] || {};
   const f = formatOf(r);
-  const parts = r.thread || [{ id: r.id, text: r.text, media: r.media, links: r.links }];
   const title = r.article?.title || '';
   const showMedia = !r.sensitive || prefs.showSensitive;
   const mediaBlock = (media = []) => showMedia && media.length ? `<div class="r-media n${Math.min(media.length, 4)}">${media.map(m => m.video && (m.type === 'video' || m.type === 'gif')
     ? `<video controls playsinline preload="none" poster="${esc(m.url)}" ${m.type === 'gif' ? 'loop muted autoplay' : ''} src="${esc(m.video)}"></video>`
     : `<a href="${esc(img(m.url, 'orig'))}" target="_blank" rel="noopener"><img src="${esc(img(m.url, 'medium'))}" alt="${esc(m.alt || '')}" loading="lazy" referrerpolicy="no-referrer"></a>`).join('')}</div>` : '';
   const card = (c) => c && (c.title || c.image) ? `<a class="r-card" href="${esc(c.url || '#')}" target="_blank" rel="noopener noreferrer">${c.image ? `<img src="${esc(c.image)}" alt="" loading="lazy" referrerpolicy="no-referrer">` : ''}<span class="domain">${esc(c.domain || host(c.url))}</span><strong>${esc(c.title || '')}</strong>${c.description ? `<span class="desc">${esc(c.description)}</span>` : ''}</a>` : '';
-  const article = r.article ? `<div class="r-article">${r.article.cover ? `<img class="r-cover" src="${esc(r.article.cover)}" alt="" referrerpolicy="no-referrer">` : ''}${articleBlocks(r.article.blocks)}</div>` : '';
+  // A post's thread parts, article and link card; the quoted post is rendered the same way.
+  const postBody = (p) => {
+    const parts = p.thread || [{ id: p.id, text: p.text, media: p.media, links: p.links }];
+    const focalIndex = p.focalIndex || 0;
+    const article = p.article ? `<div class="r-article">${p.article.cover ? `<img class="r-cover" src="${esc(p.article.cover)}" alt="" referrerpolicy="no-referrer">` : ''}${articleBlocks(p.article.blocks)}</div>` : '';
+    return `${parts.map((t, i) => `<section class="r-part ${i === focalIndex && parts.length > 1 ? 'focal' : ''}">${parts.length > 1 ? `<span class="r-index">${String(i + 1).padStart(2, '0')}</span>` : ''}${p.article && i === 0 ? article : richText(i === focalIndex && p.card && !p.article ? stripCardUrl(t.text || '', p.card) : t.text)}${mediaBlock(t.media)}${i > 0 ? card(t.card) : ''}</section>`).join('')}
+      ${!p.article ? card(p.card) : ''}`;
+  };
+  const q = r.quoted;
+  const quoted = q ? `<blockquote class="r-quote${q.thread || q.article ? ' full' : ''}"><div class="byline">${avatar(q.author || {})}<span class="name">${esc(q.author?.name || '')}</span><span class="handle">@${esc(q.author?.handle || '')}</span>${q.thread ? `<span class="q-kind">Thread · ${q.thread.length}</span>` : q.article ? '<span class="q-kind">Article</span>' : ''}${q.id ? `<a class="q-open" href="${esc(q.url || `https://x.com/i/status/${q.id}`)}" target="_blank" rel="noopener noreferrer">↗</a>` : ''}</div>${q.article?.title ? `<h2 class="r-title q-title">${esc(q.article.title)}</h2>` : ''}${postBody(q)}</blockquote>` : '';
   const pending = r.enrichment === 'pending';
   return `
     <header class="r-head">${byline(r, false)}<div class="r-meta"><span>${fullDate(r.postedAt)}</span>${formatBadge(r)}<a href="${esc(r.url)}" target="_blank" rel="noopener noreferrer">Open ${r.provider === 'twitter' ? 'on X' : esc(host(r.url))} ↗</a></div>
+      ${readerMarks(r, { docked })}
       ${title ? `<h1 class="r-title">${esc(title)}</h1>` : ''}</header>
     <div class="r-text">
-      ${parts.map((p, i) => `<section class="r-part ${i === r.focalIndex && parts.length > 1 ? 'focal' : ''}">${parts.length > 1 ? `<span class="r-index">${String(i + 1).padStart(2, '0')}</span>` : ''}${r.article && i === 0 ? article : richText(i === r.focalIndex && r.card && !r.article ? stripCardUrl(p.text, r.card) : p.text)}${mediaBlock(p.media)}${i > 0 ? card(p.card) : ''}</section>`).join('')}
-      ${!r.article ? card(r.card) : ''}
-      ${r.quoted ? `<blockquote class="r-quote"><div class="byline">${avatar(r.quoted.author || {})}<span class="name">${esc(r.quoted.author?.name || '')}</span><span class="handle">@${esc(r.quoted.author?.handle || '')}</span></div>${richText(r.quoted.text)}${mediaBlock(r.quoted.media)}</blockquote>` : ''}
+      ${postBody(r)}
+      ${quoted}
       ${pending ? `<p class="r-pending" data-pending="${r.id}">Capturing the full ${f === 'format:article' ? 'article' : 'thread'} from X…</p>` : ''}
     </div>
     <footer class="r-foot">
       ${readerActions(r)}
-      <div class="r-section"><h4>Tags</h4><div class="tag-editor" data-tags="${r.id}">${tagEditor(r)}</div></div>
-      <div class="r-section"><h4>Note</h4><textarea class="note" data-note="${r.id}" rows="2" placeholder="Why you saved this">${esc(o.note || '')}</textarea></div>
+      ${docked ? '' : `<div class="r-section"><h4>Tags</h4><div class="tag-editor" data-tags="${r.id}">${tagEditor(r)}</div></div>
+      <div class="r-section"><h4>Note</h4><textarea class="note" data-note="${r.id}" rows="2" placeholder="Why you saved this">${esc(o.note || '')}</textarea></div>`}
       <div class="r-stats"><span>${fmt.format(r.engagement.likeCount || 0)} likes</span><span>${fmt.format(r.engagement.repostCount || 0)} reposts</span><span>${fmt.format(r.engagement.bookmarkCount || 0)} saves</span></div>
     </footer>`;
 }
@@ -548,11 +684,28 @@ function stripCardUrl(text, card) {
   return text.replace(/\s*(https?:\/\/\S+)\s*$/, (m, u) => (!target || u.replace(/\/$/, '') === target || host(u) === card.domain) ? '' : m);
 }
 
+const ICON = {
+  stack: '<svg viewBox="0 0 16 16" aria-hidden="true"><path class="fill" d="M2.5 5.6 8 3l5.5 2.6L8 8.2z"/><path d="M2.5 8.4 8 11l5.5-2.6M2.5 11.2 8 13.8l5.5-2.6"/></svg>',
+  read: '<svg viewBox="0 0 16 16" aria-hidden="true"><circle class="fill" cx="8" cy="8" r="5.75"/><path class="tick" d="m5.5 8.2 1.8 1.8 3.3-3.6"/></svg>'
+};
+// Stack and read state sit under the byline, where the decision to read gets made.
+function readerMarks(r, { docked = false } = {}) {
+  const o = store.overrides[r.id] || {};
+  if (o.deleted) return '';
+  const pos = o.stackedAt ? stackList().findIndex(x => x.id === r.id) + 1 : 0;
+  const hint = (k) => docked ? '' : keyHint(k);
+  return `<div class="r-marks">
+      <button class="mark" data-stack="${r.id}" aria-pressed="${!!o.stackedAt}">${ICON.stack}<span>${o.stackedAt ? `On the stack${pos ? ` · ${pos} of ${STACK_MAX}` : ''}` : 'Add to stack'}</span>${hint('reader.stack')}</button>
+      <button class="mark" data-mark-read="${r.id}" aria-pressed="${!!o.read}">${ICON.read}<span>${o.read ? `Read ${readWhen(o.readAt)}` : 'Mark as read'}</span>${!o.read && o.readAt ? `<span class="mark-note">last read ${readWhen(o.readAt)}</span>` : ''}${hint('reader.done')}</button>
+    </div>`;
+}
+
 function readerActions(r) {
   const o = store.overrides[r.id] || {};
   if (o.deleted) return `<div class="r-actions"><button class="primary" data-act="restore">Restore</button><span class="muted small">In Trash · deleted for good in ${daysLeft(r)} days</span></div>`;
   const t = o.triaged;
   return `<div class="r-actions">
+    <button class="${o.read ? 'ghost' : 'primary'} done" data-mark-read="${r.id}" aria-pressed="${!!o.read}">${o.read ? `Read ${readWhen(o.readAt)}` : 'Done reading'}${keyHint('reader.done')}</button>
     <button class="ghost" data-act="kept" aria-pressed="${t === 'kept'}">${t === 'kept' ? 'Kept' : 'Keep'}${keyHint('reader.keep')}</button>
     <button class="ghost" data-act="archived" aria-pressed="${t === 'archived'}">${t === 'archived' ? 'Archived' : 'Archive'}${keyHint('reader.archive')}</button>
     <button class="ghost danger" data-act="deleted">Delete${keyHint('reader.delete')}</button>
@@ -637,7 +790,7 @@ async function captureNow(r) {
   }
   capturing.delete(r.id);
   if (ui.readerId === r.id) { $('#reader-body').innerHTML = readerContent(r); }
-  if (ui.inboxId === r.id && ui.view === 'inbox' && $('#triage-body')) $('#triage-body').innerHTML = readerContent(r);
+  if (ui.inboxId === r.id && ui.view === 'inbox' && $('#triage-body')) $('#triage-body').innerHTML = readerContent(r, { docked: true });
 }
 
 function applyEnrichment(r, enr) {
@@ -650,7 +803,13 @@ function applyEnrichment(r, enr) {
   if (enr.thread.length > 1) { r.thread = enr.thread; r.focalIndex = focalIndex; r.format = 'format:thread'; r.tags = [...r.tags.filter(t => facetOf(t.id) !== 'format'), { id: 'format:thread', by: 'rule', score: 1 }]; }
   if (enr.article) { r.article = enr.article; r.title = enr.article.title || r.title; }
   if (enr.card) r.card = { ...enr.card, url: enr.card.url || r.links.find(l => !/x\.com|twitter\.com/.test(l)) || null };
-  if (enr.quoted) r.quoted = { ...enr.quoted, author: enr.quoted.author };
+  if (enr.quoted) {
+    // The quoted post's own unroll (enr.quote) carries its thread, article and card.
+    const full = enr.quote?.status === 'ok' ? enr.quote : null;
+    const qi = full ? Math.max(0, full.thread.findIndex(t => t.id === enr.quoted.id)) : 0;
+    r.quoted = { ...enr.quoted, url: `https://x.com/${enr.quoted.author?.handle || 'i'}/status/${enr.quoted.id}` };
+    if (full) Object.assign(r.quoted, { thread: full.thread.length > 1 ? full.thread : null, focalIndex: full.thread.length > 1 ? qi : 0, article: full.article, card: full.card || enr.quoted.card });
+  }
   store.tagCache.delete(r.id); store.hay.delete(r.id);
 }
 
@@ -746,11 +905,13 @@ function conceptDetail(id, counts) {
 
 // ── settings ────────────────────────────────────────────────────────────
 const SETTINGS_SECTIONS = [
-  ['appearance', 'Appearance'], ['library', 'Library & inbox'], ['sources', 'Sources'], ['classification', 'Classification'],
-  ['chat', 'Chat'], ['shortcuts', 'Shortcuts'], ['skills', 'Skills'], ['agents', 'Agents & MCP'], ['account', 'Account & data']
+  ['appearance', 'Appearance'], ['library', 'Library & inbox'], ['sources', 'Sources & classification'],
+  ['chat', 'Chat & models'], ['shortcuts', 'Shortcuts'], ['skills', 'Skills'], ['account', 'Account & integrations']
 ];
 let cachedSkills = null;
 let skillSel = null; // skill name, '__new', or null
+let keyEdit = null; // key name currently being edited, or null
+let keyTestResult = {}; // key name -> { ok, error } from the last test
 async function loadSkills() { cachedSkills = (await api('/api/skills').catch(() => ({ skills: [] }))).skills; }
 
 function settingsSection() {
@@ -768,6 +929,22 @@ function renderSettings() {
   const row = (title, desc, control) => `<div class="s-row"><div><strong>${title}</strong>${desc ? `<p>${desc}</p>` : ''}</div><div class="s-control">${control}</div></div>`;
   const toggle = (key, on, attr = 'data-pref-toggle') => `<button class="switch" ${attr}="${key}" role="switch" aria-checked="${on}"><span></span></button>`;
   const group = (title, rows) => `<section class="s-group">${title ? `<h4>${title}</h4>` : ''}${rows}</section>`;
+  const backfillChip = (st) => {
+    if (st?.backfill?.running) return '<span class="pill running">Running</span>';
+    if (!st?.classifiers?.typesafe) return '<span class="pill">Off</span>';
+    const pending = Math.max(0, store.records.length - (st?.build?.classified || 0));
+    return pending > 0 ? `<span class="pill">${num.format(pending)} to classify</span>` : '<span class="pill ok">Up to date</span>';
+  };
+  const keyRow = (name, title, desc, status) => {
+    const st = status?.[name] || { set: false, source: 'none', last4: null };
+    const editing = keyEdit === name;
+    const result = keyTestResult[name];
+    const control = editing
+      ? `<form class="key-edit" data-key-form="${name}"><input class="field mono" type="password" name="value" placeholder="Paste new key" autocomplete="off" autofocus><button class="ghost small" type="submit">Save</button><button class="ghost small" type="button" data-key-cancel="${name}">Cancel</button></form>`
+      : `<div class="key-edit"><span class="mono small">${st.set ? `•••• ${esc(st.last4)}${st.source === 'env' ? ' (.env)' : ''}` : 'Not set'}</span><button class="ghost small" data-key-edit="${name}">${st.set ? 'Change' : 'Set'}</button>${st.set ? `<button class="ghost small" data-key-test="${name}">Test</button>` : ''}${st.source === 'saved' ? `<button class="ghost small danger" data-key-clear="${name}">Clear</button>` : ''}</div>`;
+    const msg = !editing && result ? `<p class="small ${result.ok ? '' : 'warn'}">${result.ok ? '✓ Key works' : esc(result.error)}</p>` : '';
+    return row(title, desc + msg, control);
+  };
 
   const bodies = {
     appearance: () => group('', `
@@ -781,18 +958,21 @@ function renderSettings() {
       group('Inbox', `
       ${row('Clear the backlog', 'Mark every untriaged bookmark older than 30 days as kept.', '<button class="ghost" data-backlog>Mark as kept</button>')}
       ${row('Untriaged', `${num.format(inboxBase().length)} bookmarks waiting. Sort and filter them from the Inbox.`, '<a class="ghost" href="/inbox" data-link>Open inbox</a>')}`),
-    sources: () => group('', `
+    sources: () => group('Sources', `
       ${row('FieldTheory', `${esc(s?.source?.path || '—')}<br>Updated ${s?.source?.modifiedAt ? `${relDate(s.source.modifiedAt)} ago` : '—'} · Index built ${store.generatedAt ? `${relDate(store.generatedAt)} ago` : '—'} · ${num.format(store.records.length)} bookmarks`, '<button class="ghost" data-refresh>Rebuild now</button>')}
       ${row('Thread unrolling', e?.available ? `${num.format(enriched)} of ${num.format(store.records.length)} captured · ${num.format(threads)} threads unrolled${e.queued ? ` · ${num.format(e.queued)} queued` : ''}${e.yieldingTo ? ' · paused while the backfill script runs' : ''}${e.waitingUntil ? ` · rate-limited until ${new Date(e.waitingUntil).toLocaleTimeString()}` : ''}${e.lastError ? `<br><span class="warn">${esc(e.lastError)}</span>` : ''}` : 'X session cookies not found. Threads and articles can’t be expanded.', e?.available ? toggle('enrich', e.enabled, 'data-server-toggle') : '')}
-      ${row('Saved web pages', `${num.format(store.records.filter(r => r.provider === 'web').length)} pages saved by URL (via Ask or MCP <code>create_bookmark</code>).`, '')}`),
-    classification: () => group('', `
-      ${row('TypeSafe Jev', s?.classifiers?.typesafe ? `${num.format(s?.build?.classified || 0)} of ${num.format(store.records.length)} classified from full thread content${s?.backfill ? ` · backfill ${s.backfill.running ? 'running' : s.backfill.stage}${s.backfill.running ? ` (${num.format(s.backfill.pending)} threads left to capture)` : ''}` : ''}. Run <code>npm run backfill</code> to process everything.` : 'Set TYPESAFE_API_KEY on the server.', `<span class="mono small">${s?.classifiers?.typesafe ? 'on' : 'off'}</span>`)}
+      ${row('Saved web pages', `${num.format(store.records.filter(r => r.provider === 'web').length)} pages saved by URL (via Ask or MCP <code>create_bookmark</code>).`, '')}`) +
+      group('Classification', `
+      ${keyRow('TYPESAFE_API_KEY', 'TypeSafe Jev key', 'Classifies bookmarks from full thread content.', s?.keys)}
+      ${row('Status', `${num.format(s?.build?.classified || 0)} of ${num.format(store.records.length)} classified${s?.backfill?.running ? ` · ${num.format(s.backfill.pending)} threads left to capture` : ''}${!s?.classifiers?.typesafe ? ' · set a key above to enable' : ''}`, `<div class="key-edit">${backfillChip(s)}<button class="ghost small" data-backfill ${s?.backfill?.running || !s?.classifiers?.typesafe ? 'disabled' : ''}>${s?.backfill?.running ? 'Running…' : 'Reverify'}</button></div>`)}
       ${row('Keyword rules', 'Concept keywords from the taxonomy.', '<a class="ghost" href="/taxonomy" data-link>Open taxonomy</a>')}
       ${row('FieldTheory categories', 'Domains and categories from FieldTheory’s classifier.', '<span class="mono small">on</span>')}`),
-    chat: () => group('', `
-      ${row('OpenRouter', s?.chat?.available ? 'Chat and Ask run through OpenRouter.' : 'Set OPENROUTER_API_KEY on the server.', `<span class="mono small">${s?.chat?.available ? 'on' : 'off'}</span>`)}
-      ${row('Default model', chatModels().map(m => `${esc(m.label)} <span class="muted">${esc(m.note)}</span>`).join('<br>'), `<select id="settings-model" aria-label="Default model">${chatModels().map(m => `<option value="${esc(m.id)}" ${(prefs.chatModel || chatModels()[0]?.id) === m.id ? 'selected' : ''}>${esc(m.label)}</option>`).join('')}</select>`)}
-      ${row('Tools', 'The assistant can search and read bookmarks, tag, triage and annotate them, save web pages, edit the taxonomy and skills, and run Jev. It asks before deleting or bulk changes.', '<a class="ghost" href="/ask" data-link>Open Ask</a>')}`),
+    chat: () => group('OpenRouter', `
+      ${keyRow('OPENROUTER_API_KEY', 'OpenRouter key', 'Powers Chat and Ask.', s?.keys)}
+      ${row('Default model', 'Used when you don’t pick one in the message composer.', `<select id="settings-model" aria-label="Default model">${chatModels().map(m => `<option value="${esc(m.id)}" ${(prefs.chatModel || chatModels()[0]?.id) === m.id ? 'selected' : ''}>${esc(m.label)}</option>`).join('')}</select>`)}
+      ${row('Tools', 'The assistant can search and read bookmarks, tag, triage and annotate them, save web pages, edit the taxonomy and skills, and run Jev. It asks before deleting or bulk changes.', '<a class="ghost" href="/ask" data-link>Open Ask</a>')}`) +
+      group('Available models', `<p class="muted small" style="margin:0 0 4px">Turn models off to keep them out of the picker. At least one must stay on.</p>` +
+      (s?.chat?.allModels || []).map(m => row(esc(m.label), esc(m.note), toggle(m.id, m.enabled, 'data-model-toggle'))).join('')),
     skills: () => skillsManager(),
     shortcuts: () => `<p class="s-lede">Click a shortcut to change it, then press the new keys. A letter followed quickly by another makes a two-key sequence, like <kbd>g</kbd><kbd>l</kbd>. Esc cancels.</p>` +
       [...new Set(KEYMAP.map(k => k[1]))].map(g => group(g, KEYMAP.filter(k => k[1] === g).map(([id, , l, def]) => {
@@ -800,15 +980,15 @@ function renderSettings() {
         const rec = recordingKey?.id === id;
         return row(esc(l), '', `<div class="key-edit">${rec ? `<span class="key-rec">${recordingKey.first ? capsOf(recordingKey.first) + ' …' : 'Press keys…'}</span>` : `<button class="key-btn" data-rec="${id}" title="Change">${keyHint(id)}</button>`}${custom && !rec ? `<button class="ghost small" data-key-reset="${id}" title="Default: ${esc(def.join(' / '))}">Reset</button>` : ''}</div>`);
       }).join(''))).join('') + group('', row('Reset all shortcuts', 'Restore every default.', `<button class="ghost" data-keys-reset ${prefs.keys && Object.keys(prefs.keys).length ? '' : 'disabled'}>Reset all</button>`)),
-    agents: () => group('', `
-      ${row('Connect an agent', 'Paste this prompt into Claude Code, Hermes, Cursor, Codex or any MCP-capable agent. It includes your URL and token, and points the agent to <a href="/connect.md" target="_blank">/connect.md</a> for setup.', `<button class="primary" data-copy-mcp="prompt">Copy setup prompt</button>`)}
-      ${row('MCP endpoint', 'Streamable HTTP. Every Corpus capability as tools; skills as prompts.', `<button class="ghost" data-copy-mcp="url">Copy URL</button>`)}
-      ${row('Token', 'Sent as <code>Authorization: Bearer …</code>. Stored on the server as CORPUS_MCP_TOKEN.', `<button class="ghost" data-copy-mcp="token">Copy token</button>`)}`),
     account: () => group('This device', installRow(row)) +
       group('Access', row('Password', s?.passwordProtected ? 'Corpus is behind a password. Sessions last 30 days per device.' : 'Not protected. Set CORPUS_PASSWORD_HASH on the server.', s?.passwordProtected ? '<button class="ghost" data-logout>Sign out</button>' : '')) +
       group('Data', `
       ${row('Export', 'Bookmarks with your tags, notes and triage state.', '<button class="ghost" data-export>Download JSON</button>')}
-      ${row('Reset this device', 'Clears layout and appearance preferences here. Your tags and notes are kept.', '<button class="ghost danger" data-reset-prefs>Reset</button>')}`)
+      ${row('Reset this device', 'Clears layout and appearance preferences here. Your tags and notes are kept.', '<button class="ghost danger" data-reset-prefs>Reset</button>')}`) +
+      group('Agents & MCP', `
+      ${row('Connect an agent', 'Paste this prompt into Claude Code, Hermes, Cursor, Codex or any MCP-capable agent. It includes your URL and token, and points the agent to <a href="/connect.md" target="_blank">/connect.md</a> for setup.', `<button class="primary" data-copy-mcp="prompt">Copy setup prompt</button>`)}
+      ${row('MCP endpoint', 'Streamable HTTP. Every Corpus capability as tools; skills as prompts.', `<button class="ghost" data-copy-mcp="url">Copy URL</button>`)}
+      ${row('Token', 'Sent as <code>Authorization: Bearer …</code>. Stored on the server as CORPUS_MCP_TOKEN.', `<button class="ghost" data-copy-mcp="token">Copy token</button>`)}`)
   };
   const title = SETTINGS_SECTIONS.find(([id]) => id === section)[1];
   view().className = 'view settings';
@@ -903,16 +1083,33 @@ function md(text, cites) {
   return out.join('');
 }
 
-function messageHtml(m) {
-  if (m.role === 'user') return `<div class="msg user"><div class="msg-body">${esc(m.content).replace(/\n/g, '<br>')}</div></div>`;
+// Time a message was sent or its answer arrived: "14:32" today, "Sep 28, 14:32" before.
+function msgTime(iso) {
+  if (!iso) return '';
+  const d = new Date(iso), today = d.toDateString() === new Date().toDateString();
+  const t = d.toLocaleTimeString('en', { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
+  const text = today ? t : `${d.toLocaleDateString('en', { month: 'short', day: 'numeric', ...(d.getFullYear() !== new Date().getFullYear() ? { year: 'numeric' } : {}) })}, ${t}`;
+  return `<time datetime="${esc(iso)}" title="${esc(d.toLocaleString('en', { dateStyle: 'full', timeStyle: 'medium' }))}">${text}</time>`;
+}
+function msgTools(m, i, s) {
+  if (s?.streaming || m.streaming) return '';
+  const b = (act, l) => `<button type="button" data-msg-act="${act}" data-i="${i}">${l}</button>`;
+  return `<span class="msg-tools">${m.content ? b('copy', 'Copy') : ''}${m.role === 'user' ? b('edit', 'Edit') : ''}${b('retry', 'Retry')}</span>`;
+}
+
+function messageHtml(m, i, s) {
+  if (m.role === 'user') {
+    if (s?.editing === i) return `<div class="msg user editing"><form class="msg-edit" data-msg-edit="${i}"><textarea rows="2" aria-label="Edit message">${esc(m.content)}</textarea><div class="msg-edit-bar"><button type="button" class="ghost small" data-msg-act="cancel-edit">Cancel <kbd>esc</kbd></button><button class="primary" type="submit">Send <kbd>⏎</kbd></button></div></form></div>`;
+    return `<div class="msg user"><div class="msg-body">${esc(m.content).replace(/\n/g, '<br>')}</div><div class="msg-meta">${msgTools(m, i, s)}${msgTime(m.at)}</div></div>`;
+  }
   const cites = [];
   const body = m.content ? md(m.content, cites) : '';
   const sources = cites.map(id => store.byId.get(id)).filter(Boolean);
-  const meta = m.error ? `<span class="warn">${esc(m.error)}</span>` : m.streaming ? `<span class="thinking">${esc(m.status || 'Thinking')}</span>` : [modelLabel(m.model), m.usage?.cost ? `$${m.usage.cost < 0.001 ? m.usage.cost.toFixed(5) : m.usage.cost.toFixed(4)}` : m.model?.endsWith(':free') ? 'free' : ''].filter(Boolean).join(' · ');
+  const meta = m.error ? `<span class="warn">${esc(m.error)}</span>` : m.streaming ? `<span class="thinking">${esc(m.status || 'Thinking')}</span>` : [msgTime(m.at), modelLabel(m.model), m.usage?.cost ? `$${m.usage.cost < 0.001 ? m.usage.cost.toFixed(5) : m.usage.cost.toFixed(4)}` : m.model?.endsWith(':free') ? 'free' : ''].filter(Boolean).join(' · ');
   return `<div class="msg assistant ${m.streaming ? 'streaming' : ''}"><div class="msg-body">${body}</div>
     ${sources.length ? `<div class="msg-sources">${sources.map((r, i) => `<button data-open="${r.id}"><span class="n">${i + 1}</span>${avatar(r.author)}<span class="s-title">${esc((r.title || snippet(r, 80)).slice(0, 90))}</span><span class="muted">@${esc(r.author.handle)}</span></button>`).join('')}</div>` : ''}
     ${m.actions?.length ? `<ul class="msg-actions">${m.actions.map(a => `<li>${esc(a.summary)}</li>`).join('')}</ul>` : ''}
-    <div class="msg-meta">${meta}</div></div>`;
+    <div class="msg-meta">${m.error ? `${msgTime(m.at)}${meta}` : `<span>${meta}</span>`}${msgTools(m, i, s)}</div></div>`;
 }
 
 function chatSuggestions(s) {
@@ -928,7 +1125,7 @@ function chatHtml(s) {
   const current = prefs.chatModel && models.some(m => m.id === prefs.chatModel) ? prefs.chatModel : models[0]?.id;
   const empty = !s.messages.length;
   return `<div class="chat ${empty ? 'is-empty' : ''}" data-chat="${esc(s.key)}">
-    <div class="chat-log">${empty ? `<div class="chat-empty"><span class="kicker">${s.scope === 'bookmark' ? 'Ask about this bookmark' : 'Ask your corpus'}</span>${chatSuggestions(s).map(q => `<button class="suggestion" data-ask="${esc(q)}">${esc(q)}</button>`).join('')}</div>` : s.messages.map(messageHtml).join('')}</div>
+    <div class="chat-log">${empty ? `<div class="chat-empty"><span class="kicker">${s.scope === 'bookmark' ? 'Ask about this bookmark' : 'Ask your corpus'}</span>${chatSuggestions(s).map(q => `<button class="suggestion" data-ask="${esc(q)}">${esc(q)}</button>`).join('')}</div>` : s.messages.map((m, i) => messageHtml(m, i, s)).join('')}</div>
     <form class="composer" data-composer="${esc(s.key)}">
       <textarea rows="1" placeholder="${s.scope === 'bookmark' ? 'Ask about this…' : 'Ask anything about what you’ve saved…'}" ${store.status?.chat?.available ? '' : 'disabled'}></textarea>
       <div class="composer-bar">
@@ -941,28 +1138,37 @@ function chatHtml(s) {
 
 function paintChat(s, { full = false } = {}) {
   for (const el of $$(`[data-chat="${CSS.escape(s.key)}"]`)) {
-    if (full || !el.querySelector('.msg.streaming')) { const draft = el.querySelector('textarea')?.value || ''; el.outerHTML = chatHtml(s); const n = $(`[data-chat="${CSS.escape(s.key)}"] textarea`); if (n) n.value = draft; }
-    else { el.querySelector('.msg.streaming').outerHTML = messageHtml(s.messages.at(-1)); }
+    if (full || !el.querySelector('.msg.streaming')) { const draft = el.querySelector('.composer textarea')?.value || ''; el.outerHTML = chatHtml(s); const n = $(`[data-chat="${CSS.escape(s.key)}"] .composer textarea`); if (n) n.value = draft; }
+    else { el.querySelector('.msg.streaming').outerHTML = messageHtml(s.messages.at(-1), s.messages.length - 1, s); }
     const log = $(`[data-chat="${CSS.escape(s.key)}"] .chat-log`);
     const scroller = log?.closest('.reader-sheet') || log;
     if (scroller) scroller.scrollTop = scroller.scrollHeight;
   }
 }
 
-async function sendChat(s, text) {
+// Messages the server hasn't stored (a request that failed before it started, or a failed answer)
+// are marked unsaved, so this count matches the server's copy of the conversation.
+const savedBefore = (s, i) => s.messages.slice(0, i).filter(m => !m.unsaved).length;
+
+// from: resend from this message index, dropping it and everything after (retry / edit).
+async function sendChat(s, text, { from } = {}) {
   text = text.trim();
   if (!text || s.streaming) return;
   const model = $(`[data-chat="${CSS.escape(s.key)}"] .chat-model`)?.value || chatModels()[0]?.id;
   savePrefs({ chatModel: model });
-  s.messages.push({ role: 'user', content: text });
+  let truncate = s.pendingTruncate;
+  if (from != null) { truncate = savedBefore(s, from); s.messages = s.messages.slice(0, from); }
+  s.editing = null;
+  const userMsg = { role: 'user', content: text, at: new Date().toISOString() };
+  s.messages.push(userMsg);
   const msg = { role: 'assistant', content: '', streaming: true, status: 'Thinking', model };
   s.messages.push(msg);
   s.streaming = true;
   paintChat(s, { full: true });
-  let raf = 0, mutated = false;
+  let raf = 0, mutated = false, started = false;
   const repaint = () => { if (!raf) raf = requestAnimationFrame(() => { raf = 0; paintChat(s); }); };
   try {
-    const res = await fetch('/api/chat', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ scope: s.scope, bookmarkId: s.bookmarkId, conversationId: s.conversationId, message: text, model }) });
+    const res = await fetch('/api/chat', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ scope: s.scope, bookmarkId: s.bookmarkId, conversationId: s.conversationId, message: text, model, truncate }) });
     if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || `Error ${res.status}`);
     const reader = res.body.getReader(), dec = new TextDecoder();
     let buf = '';
@@ -975,7 +1181,7 @@ async function sendChat(s, text) {
         const block = buf.slice(0, i); buf = buf.slice(i + 2);
         const event = block.match(/^event: (.*)$/m)?.[1];
         const data = JSON.parse(block.match(/^data: (.*)$/m)?.[1] || '{}');
-        if (event === 'meta') { s.conversationId = data.conversationId; }
+        if (event === 'meta') { s.conversationId = data.conversationId; started = true; s.pendingTruncate = undefined; }
         else if (event === 'status') { msg.status = data.text; repaint(); }
         else if (event === 'delta') { msg.content += data.text; msg.status = 'Writing'; repaint(); }
         else if (event === 'action') { (msg.actions ||= []).push(data); repaint(); }
@@ -983,21 +1189,84 @@ async function sendChat(s, text) {
         else if (event === 'error') throw new Error(data.message);
       }
     }
-  } catch (e) { msg.error = e.message; }
+  } catch (e) {
+    msg.error = e.message; msg.unsaved = true;
+    // Never reached the server: it still has the old history, so the next send re-applies the cut.
+    if (!started) { userMsg.unsaved = true; if (truncate != null) s.pendingTruncate = truncate; }
+  }
+  msg.at = new Date().toISOString();
   msg.streaming = false; s.streaming = false;
-  if (mutated) { await loadAll(); updateInboxCount(); if (ui.readerId && store.byId.get(ui.readerId)) { for (const box of $$(`[data-tags="${ui.readerId}"]`)) box.innerHTML = tagEditor(store.byId.get(ui.readerId)); } toast('Library updated'); }
+  if (mutated) { await loadAll(); updateInboxCount(); for (const id of new Set([ui.readerId, s.bookmarkId])) { const r = id && store.byId.get(id); if (r) for (const box of $$(`[data-tags="${id}"]`)) box.innerHTML = tagEditor(r); } toast('Library updated'); }
   paintChat(s, { full: true });
   if (s.scope === 'corpus' && ui.view === 'ask') { loadChatList().then(renderAskSide); if (location.pathname !== `/ask/${s.conversationId}`) history.replaceState({}, '', `/ask/${s.conversationId}`); }
+}
+
+async function copyText(text) {
+  try { await navigator.clipboard.writeText(text); }
+  catch { const ta = document.createElement('textarea'); ta.value = text; ta.style.cssText = 'position:fixed;opacity:0'; document.body.append(ta); ta.select(); document.execCommand('copy'); ta.remove(); }
+  toast('Copied');
+}
+async function messageAction(s, act, i) {
+  if (!s || s.streaming) return;
+  const m = s.messages[i];
+  if (act === 'cancel-edit') { s.editing = null; paintChat(s, { full: true }); return; }
+  if (!m) return;
+  if (act === 'copy') return copyText(m.content);
+  if (act === 'edit') {
+    s.editing = i; paintChat(s, { full: true });
+    const ta = $(`[data-chat="${CSS.escape(s.key)}"] .msg-edit textarea`);
+    if (ta) { ta.style.height = `${Math.min(220, ta.scrollHeight)}px`; ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); ta.closest('.msg').scrollIntoView({ block: 'nearest' }); }
+    return;
+  }
+  if (act === 'retry') {
+    // Retrying an answer re-asks the question before it; retrying a question resends it.
+    let j = i; while (j >= 0 && s.messages[j].role !== 'user') j--;
+    if (j >= 0) await sendChat(s, s.messages[j].content, { from: j });
+  }
 }
 
 async function loadConversation(s, id) {
   const c = await api(`/api/chats/${id}`).catch(() => null);
   if (!c) return;
   s.conversationId = c.id;
-  s.messages = c.messages.map(m => ({ role: m.role, content: m.content, model: m.model, usage: m.usage, actions: m.actions }));
+  s.messages = c.messages.map(m => ({ role: m.role, content: m.content, model: m.model, usage: m.usage, actions: m.actions, at: m.at }));
 }
 
-// Reader chat tab: one running conversation per bookmark.
+// One running conversation per bookmark, shared by the reader's Chat tab and the inbox's Ask AI panel.
+async function bookmarkSession(id) {
+  const s = session(`b:${id}`, { scope: 'bookmark', bookmarkId: id });
+  s.loading ||= (async () => {
+    const { chats } = await api(`/api/chats?bookmark=${id}`).catch(() => ({ chats: [] }));
+    if (chats[0] && !s.messages.length) await loadConversation(s, chats[0].id);
+  })();
+  await s.loading;
+  return s;
+}
+
+// Inbox Ask AI: a docked chat beside the post, with the current entry attached as context.
+function inboxChatHtml(r) {
+  return `<aside class="triage-chat" aria-label="Ask AI">
+    <div class="tc-head">
+      <span class="kicker">Ask AI</span>
+      <button class="x" data-inbox-ask-close aria-label="Close" title="Close (esc)">×</button>
+    </div>
+    <div class="tc-attached" title="This entry is attached to the conversation">${avatar(r.author)}<span class="tc-title">${esc((r.title || snippet(r, 80)).slice(0, 90))}</span><span class="muted">@${esc(r.author.handle)}</span></div>
+    ${chatHtml(session(`b:${r.id}`, { scope: 'bookmark', bookmarkId: r.id }))}
+  </aside>`;
+}
+async function loadInboxChat(id, { focus = false } = {}) {
+  const s = await bookmarkSession(id);
+  if (ui.view !== 'inbox' || ui.inboxId !== id || !ui.inboxChat) return;
+  paintChat(s, { full: true });
+  if (focus) $('.triage-chat textarea')?.focus();
+}
+function toggleInboxChat(open = !ui.inboxChat) {
+  ui.inboxChat = open;
+  renderInbox();
+  if (open && ui.inboxId) loadInboxChat(ui.inboxId, { focus: true });
+}
+
+// Reader chat tab.
 async function showReaderTab(tab) {
   ui.readerTab = tab;
   $$('[data-rtab]').forEach(b => b.setAttribute('aria-pressed', b.dataset.rtab === tab));
@@ -1005,12 +1274,7 @@ async function showReaderTab(tab) {
   const box = $('#reader-chat');
   box.hidden = tab !== 'chat';
   if (tab !== 'chat') return;
-  const s = session(`b:${ui.readerId}`, { scope: 'bookmark', bookmarkId: ui.readerId });
-  if (!s.loaded) {
-    s.loaded = true;
-    const { chats } = await api(`/api/chats?bookmark=${ui.readerId}`).catch(() => ({ chats: [] }));
-    if (chats[0]) await loadConversation(s, chats[0].id);
-  }
+  const s = await bookmarkSession(ui.readerId);
   box.innerHTML = chatHtml(s);
   const sheet = $('.reader-sheet'); sheet.scrollTop = sheet.scrollHeight;
   $('textarea', box)?.focus();
@@ -1018,12 +1282,14 @@ async function showReaderTab(tab) {
 
 // Ask page: conversations over the whole corpus.
 let chatList = [];
-async function loadChatList() { chatList = (await api('/api/chats?scope=corpus').catch(() => ({ chats: [] }))).chats; }
+let askArchived = false;
+async function loadChatList() { chatList = (await api(`/api/chats?scope=corpus${askArchived ? '&archived=1' : ''}`).catch(() => ({ chats: [] }))).chats; }
 function renderAskSide() {
   const side = $('.ask-side ol');
   if (!side) return;
   const cur = sessions.get('corpus')?.conversationId;
-  side.innerHTML = chatList.map(c => `<li class="${c.id === cur ? 'on' : ''}"><a href="/ask/${c.id}" data-link>${esc(c.title)}</a><span class="muted mono">${relDate(c.updatedAt)}</span><button class="x" data-del-chat="${c.id}" aria-label="Delete">×</button></li>`).join('') || '<li class="muted small">No conversations yet</li>';
+  $$('.ask-tabs button').forEach(b => b.setAttribute('aria-pressed', String((b.dataset.askTab === 'archived') === askArchived)));
+  side.innerHTML = chatList.map(c => `<li class="${c.id === cur ? 'on' : ''}"><a href="/ask/${c.id}" data-link>${esc(c.title)}</a><span class="muted mono">${relDate(c.updatedAt)}</span><span class="li-actions"><button class="x" data-archive-chat="${c.id}" data-archive-to="${c.archived ? '0' : '1'}" aria-label="${c.archived ? 'Restore' : 'Archive'}" title="${c.archived ? 'Restore' : 'Archive'}">${c.archived ? '↩' : '⤓'}</button><button class="x" data-del-chat="${c.id}" aria-label="Delete" title="Delete">×</button></span></li>`).join('') || `<li class="muted small ask-empty">${askArchived ? 'No archived conversations' : 'No conversations yet'}</li>`;
 }
 async function renderAsk() {
   view().className = 'view ask';
@@ -1031,7 +1297,7 @@ async function renderAsk() {
   const s = session('corpus', { scope: 'corpus' });
   if (id && s.conversationId !== id && !s.streaming) await loadConversation(s, id);
   if (!id && !s.streaming && s.conversationId) { s.conversationId = null; s.messages = []; }
-  view().innerHTML = `<aside class="ask-side"><button class="ghost" data-new-chat>New chat</button><ol></ol></aside><section class="ask-main">${store.status?.chat?.available ? '' : '<p class="warn small">Set OPENROUTER_API_KEY on the server to enable chat.</p>'}${chatHtml(s)}</section>`;
+  view().innerHTML = `<aside class="ask-side"><button class="ghost" data-new-chat>New chat</button><div class="segmented ask-tabs" role="tablist"><button data-ask-tab="chats" aria-pressed="${!askArchived}">Chats</button><button data-ask-tab="archived" aria-pressed="${askArchived}">Archived</button></div><ol></ol></aside><section class="ask-main">${store.status?.chat?.available ? '' : '<p class="warn small">Set OPENROUTER_API_KEY on the server to enable chat.</p>'}${chatHtml(s)}</section>`;
   renderAskSide();
   loadChatList().then(renderAskSide);
   $('.ask-main textarea')?.focus();
@@ -1076,14 +1342,18 @@ document.addEventListener('click', async (ev) => {
   if (t.matches('a[data-link]')) { ev.preventDefault(); navigate(t.getAttribute('href')); return; }
   if (d.close !== undefined) { closeReader(); return; }
   if (d.rtab) { showReaderTab(d.rtab); return; }
+  if (d.msgAct) { await messageAction(sessions.get(t.closest('[data-chat]').dataset.chat), d.msgAct, Number(d.i)); return; }
   if (d.ask) { const box = t.closest('[data-chat]'); await sendChat(sessions.get(box.dataset.chat), d.ask); return; }
-  if (d.chatReset !== undefined) { const s = sessions.get(t.closest('[data-chat]').dataset.chat); s.messages = []; s.conversationId = null; if (s.scope === 'corpus') navigate('/ask'); else paintChat(s, { full: true }); return; }
+  if (d.chatReset !== undefined) { const s = sessions.get(t.closest('[data-chat]').dataset.chat); s.messages = []; s.conversationId = null; s.editing = null; s.pendingTruncate = undefined; if (s.scope === 'corpus') navigate('/ask'); else paintChat(s, { full: true }); return; }
   if (d.newChat !== undefined) { const s = session('corpus', { scope: 'corpus' }); if (!s.streaming) { s.messages = []; s.conversationId = null; } navigate('/ask'); return; }
-  if (d.delChat) { ev.preventDefault(); await api(`/api/chats/${d.delChat}`, { method: 'DELETE' }); if (sessions.get('corpus')?.conversationId === d.delChat) { navigate('/ask'); } else { await loadChatList(); renderAskSide(); } return; }
+  if (d.delChat) { ev.preventDefault(); if (!confirm('Delete this conversation? This can’t be undone.')) return; await api(`/api/chats/${d.delChat}`, { method: 'DELETE' }); if (sessions.get('corpus')?.conversationId === d.delChat) { navigate('/ask'); } else { await loadChatList(); renderAskSide(); } return; }
+  if (d.archiveChat) { ev.preventDefault(); const archived = d.archiveTo === '1'; await api(`/api/chats/${d.archiveChat}`, { method: 'PUT', body: { archived } }); if (archived && sessions.get('corpus')?.conversationId === d.archiveChat) { navigate('/ask'); } else { await loadChatList(); renderAskSide(); } toast(archived ? 'Archived' : 'Restored'); return; }
+  if (d.askTab) { const archived = d.askTab === 'archived'; if (archived === askArchived) return; askArchived = archived; await loadChatList(); renderAskSide(); return; }
   if (d.step) { stepReader(Number(d.step)); return; }
   if (d.untag) { const r = store.byId.get(t.closest('[data-tags]').dataset.tags); await setTags(r, { remove: [d.untag] }); rerenderTags(r); return; }
   if (t.closest('.suggest') && (d.sid || d.create)) { await pickSuggestion(t); return; }
-  if (d.open && !ev.target.closest('a[href]:not([data-open])')) { ev.preventDefault(); openReader(d.open, ui.view === 'library' ? ui.results : store.records.filter(r => r.id === d.open)); return; }
+  if (d.unstack) { await toggleStack(d.unstack); return; }
+  if (d.open && !ev.target.closest('a[href]:not([data-open])')) { ev.preventDefault(); openReader(d.open, t.closest('.stack') ? stackList() : ui.view === 'library' ? ui.results : store.records.filter(r => r.id === d.open)); return; }
   if (d.filter) { ui.filters.has(d.filter) ? ui.filters.delete(d.filter) : ui.filters.add(d.filter); ui.visible = PAGE; syncUrl(); renderLibrary(); return; }
   if (d.unfilter) { ui.filters.delete(d.unfilter); ui.visible = PAGE; syncUrl(); renderLibrary(); return; }
   if (d.caret) { ui.railOpen.has(d.caret) ? ui.railOpen.delete(d.caret) : ui.railOpen.add(d.caret); $('.rail').innerHTML = renderRail(); return; }
@@ -1095,8 +1365,10 @@ document.addEventListener('click', async (ev) => {
   if (d.inboxFormat) { savePrefs({ inboxFormat: d.inboxFormat }); ui.inboxId = null; renderInbox(); return; }
   if (d.inboxClear !== undefined) { savePrefs({ inboxFormat: 'all', inboxTopic: '', inboxWindow: 'all' }); ui.inboxId = null; updateInboxCount(); renderInbox(); return; }
   if (d.triage) { await triageCurrent(d.triage); return; }
-  if (d.skip !== undefined) { const q = ui.inboxQueue; ui.inboxId = q[q.findIndex(r => r.id === ui.inboxId) + 1]?.id || q[0]?.id; renderInbox(); return; }
+  if (d.skip !== undefined) { const q = ui.inboxQueue; ui.inboxId = q[q.findIndex(r => r.id === ui.inboxId) + 1]?.id || q[0]?.id; renderInbox(); scrollTriageTop(); return; }
   if (d.pick) { ui.inboxId = d.pick; renderInbox(); return; }
+  if (d.inboxAsk !== undefined) { toggleInboxChat(); return; }
+  if (d.inboxAskClose !== undefined) { toggleInboxChat(false); return; }
   if (d.facet) { ui.taxFacet = d.facet; ui.taxSelected = null; renderTaxonomy(); return; }
   if (d.concept) { ui.taxSelected = d.concept; renderTaxonomy(); return; }
   if (d.newConcept !== undefined) { ui.taxSelected = '__new'; renderTaxonomy(); $('.t-form input[name=label]')?.focus(); return; }
@@ -1114,6 +1386,7 @@ document.addEventListener('click', async (ev) => {
   if (d.prefToggle) { savePrefs({ [d.prefToggle]: !prefs[d.prefToggle] }); renderSettings(); return; }
   if (d.serverToggle) { const on = t.getAttribute('aria-checked') !== 'true'; await api('/api/settings', { method: 'PUT', body: { [d.serverToggle]: on } }).catch(e => toast(e.message)); await loadStatus(); renderSettings(); return; }
   if (d.refresh !== undefined) { t.disabled = true; t.textContent = 'Rebuilding…'; try { await api('/api/refresh', { method: 'POST' }); await loadAll(); await loadStatus(); updateInboxCount(); toast(`Rebuilt · ${num.format(store.records.length)} bookmarks`); } catch (e) { toast(e.message); } renderSettings(); return; }
+  if (d.backfill !== undefined) { t.disabled = true; t.textContent = 'Starting…'; try { await api('/api/backfill', { method: 'POST' }); await loadStatus(); toast('Backfill started'); } catch (e) { toast(e.message); } renderSettings(); return; }
   if (d.backlog !== undefined) {
     const cutoff = Date.now() - 30 * 864e5;
     const ids = store.records.filter(r => !triage(r) && new Date(r.postedAt) < cutoff).map(r => r.id);
@@ -1121,7 +1394,7 @@ document.addEventListener('click', async (ev) => {
     await saveOverride(ids, { triaged: 'kept' }, { label: `Keep ${num.format(ids.length)} bookmarks` }); updateInboxCount(); toast(`${num.format(ids.length)} marked as kept`, { undo: true }); return;
   }
   if (d.export !== undefined) {
-    const out = store.records.map(r => ({ ...r, tags: tagsOf(r), note: store.overrides[r.id]?.note || null, triaged: triage(r) }));
+    const out = store.records.map(r => ({ ...r, tags: tagsOf(r), note: store.overrides[r.id]?.note || null, triaged: triage(r), read: isRead(r), readAt: isRead(r) ? store.overrides[r.id].readAt : null }));
     const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(new Blob([JSON.stringify({ exportedAt: new Date().toISOString(), taxonomy: store.concepts, records: out })], { type: 'application/json' })), download: `corpus-${new Date().toISOString().slice(0, 10)}.json` });
     a.click(); URL.revokeObjectURL(a.href); return;
   }
@@ -1136,8 +1409,22 @@ document.addEventListener('click', async (ev) => {
   if (d.rec) { startRecording(d.rec); return; }
   if (d.keyReset) { const k = { ...(prefs.keys || {}) }; delete k[d.keyReset]; savePrefs({ keys: k }); renderSettings(); return; }
   if (d.keysReset !== undefined) { savePrefs({ keys: {} }); renderSettings(); toast('Shortcuts reset'); return; }
+  if (d.keyEdit) { keyEdit = d.keyEdit; delete keyTestResult[d.keyEdit]; renderSettings(); return; }
+  if (d.keyCancel) { keyEdit = null; renderSettings(); return; }
+  if (d.keyClear) { if (!confirm('Clear this key? Chat or classification will stop working unless it’s also set in the server .env.')) return; try { await api('/api/keys', { method: 'PUT', body: { name: d.keyClear, value: '' } }); await loadStatus(); toast('Key cleared'); } catch (e) { toast(e.message); } renderSettings(); return; }
+  if (d.keyTest) { const name = d.keyTest; t.disabled = true; t.textContent = 'Testing…'; try { keyTestResult[name] = { ok: true, ...(await api('/api/keys/test', { method: 'POST', body: { name } })) }; } catch (e) { keyTestResult[name] = { ok: false, error: e.message }; } renderSettings(); return; }
+  if (d.modelToggle) {
+    const id = d.modelToggle;
+    const disabled = new Set(store.settings.disabledModels || []);
+    disabled.has(id) ? disabled.delete(id) : disabled.add(id);
+    try { await api('/api/settings', { method: 'PUT', body: { disabledModels: [...disabled] } }); store.settings.disabledModels = [...disabled]; await loadStatus(); } catch (e) { toast(e.message); }
+    renderSettings(); return;
+  }
   if (d.act) { if (d.act === 'restore') await restoreReader(); else await triageReader(d.act); return; }
+  if (d.stack) { await toggleStack(d.stack); return; }
+  if (d.markRead) { await toggleRead(d.markRead); return; }
   if (d.undo !== undefined) { await undo(); return; }
+  if (d.mobileSearch !== undefined) { if (ui.view !== 'library') navigate('/'); $('#search').focus(); $('#search').select(); return; }
   if (d.skill) { skillSel = d.skill; renderSettings(); return; }
   if (d.skillNew !== undefined) { skillSel = '__new'; renderSettings(); $('.skill-form input[name=name]')?.focus(); return; }
   if (d.skillCancel !== undefined) { skillSel = null; renderSettings(); return; }
@@ -1148,6 +1435,8 @@ document.addEventListener('click', async (ev) => {
 });
 
 document.addEventListener('submit', async (ev) => {
+  const editForm = ev.target.closest('[data-msg-edit]');
+  if (editForm) { ev.preventDefault(); const text = $('textarea', editForm).value; if (text.trim()) await sendChat(sessions.get(editForm.closest('[data-chat]').dataset.chat), text, { from: Number(editForm.dataset.msgEdit) }); return; }
   const skillForm = ev.target.closest('[data-skill-form]');
   if (skillForm) {
     ev.preventDefault();
@@ -1157,6 +1446,16 @@ document.addEventListener('submit', async (ev) => {
       const res = await skillOp(isNew ? 'create_skill' : 'update_skill', { name: String(fd.get('name')), description: String(fd.get('description')).trim(), instructions: String(fd.get('instructions')).trim() });
       await loadSkills(); skillSel = res.name; renderSettings(); toast(isNew ? 'Skill created' : 'Skill saved');
     } catch (e) { toast(e.message); }
+    return;
+  }
+  const keyForm = ev.target.closest('[data-key-form]');
+  if (keyForm) {
+    ev.preventDefault();
+    const name = keyForm.dataset.keyForm;
+    const value = String(new FormData(keyForm).get('value') || '').trim();
+    if (!value) return;
+    try { await api('/api/keys', { method: 'PUT', body: { name, value } }); keyEdit = null; delete keyTestResult[name]; await loadStatus(); toast('Key saved'); } catch (e) { toast(e.message); }
+    renderSettings();
     return;
   }
   const composer = ev.target.closest('[data-composer]');
@@ -1212,17 +1511,19 @@ document.addEventListener('input', (ev) => {
     const list = $('.suggest', box); const items = suggestions(t.value, r);
     list.innerHTML = items.map((s, i) => `<button type="button" class="${i === 0 ? 'hi' : ''}" ${s.id ? `data-sid="${esc(s.id)}"` : `data-create="${s.create}"`}><span>${esc(s.text)}</span>${s.facet ? `<span class="muted mono">${s.facet}</span>` : ''}</button>`).join('');
     list.hidden = !items.length || !t.value.trim();
+    // On phones the docked tag row scrolls sideways, so its menu is fixed and opens upward from the input.
+    if (!list.hidden && t.closest('.triage-dock') && getComputedStyle(list).position === 'fixed') list.style.bottom = `${innerHeight - t.getBoundingClientRect().top + 6}px`;
     return;
   }
-  if (t.matches('.composer textarea')) { t.style.height = 'auto'; t.style.height = `${Math.min(220, t.scrollHeight)}px`; }
+  if (t.matches('.composer textarea, .msg-edit textarea')) { t.style.height = 'auto'; t.style.height = `${Math.min(220, t.scrollHeight)}px`; }
 });
 
 document.addEventListener('change', (ev) => {
-  if (ev.target.id === 'settings-sort') { savePrefs({ sort: ev.target.value }); toast('Default order saved'); return; }
+  if (ev.target.id === 'settings-sort') { if (ev.target.value === 'random') reshuffleRandomSort(); savePrefs({ sort: ev.target.value }); toast('Default order saved'); return; }
   if (ev.target.id === 'settings-model') { savePrefs({ chatModel: ev.target.value }); toast('Default model saved'); return; }
   const inboxPref = { 'inbox-sort': 'inboxSort', 'inbox-window': 'inboxWindow', 'inbox-topic': 'inboxTopic' }[ev.target.id];
-  if (inboxPref) { savePrefs({ [inboxPref]: ev.target.value }); ui.inboxId = null; updateInboxCount(); renderInbox(); return; }
-  if (ev.target.id === 'sort') { savePrefs({ sort: ev.target.value }); ui.visible = PAGE; renderLibrary(); }
+  if (inboxPref) { if (ev.target.id === 'inbox-sort' && ev.target.value === 'random') reshuffleRandomSort(); savePrefs({ [inboxPref]: ev.target.value }); ui.inboxId = null; updateInboxCount(); renderInbox(); return; }
+  if (ev.target.id === 'sort') { if (ev.target.value === 'random') reshuffleRandomSort(); savePrefs({ sort: ev.target.value }); ui.visible = PAGE; renderLibrary(); }
   if (ev.target.matches('[data-note]')) saveOverride([ev.target.dataset.note], { note: ev.target.value.trim() || null }, { label: 'Edit note' });
 });
 
@@ -1266,12 +1567,15 @@ const KEYMAP = [
   ['reader.keep', 'Reader', 'Keep', ['M']],
   ['reader.archive', 'Reader', 'Archive', ['E']],
   ['reader.delete', 'Reader', 'Move to Trash', ['#']],
+  ['reader.stack', 'Reader', 'Add to / take off the stack', ['S']],
+  ['reader.done', 'Reader', 'Mark read / unread', ['D']],
   ['inbox.keep', 'Inbox', 'Keep', ['Enter']],
   ['inbox.archive', 'Inbox', 'Archive', ['E']],
   ['inbox.delete', 'Inbox', 'Move to Trash', ['#']],
   ['inbox.next', 'Inbox', 'Skip to next', ['S', 'J', 'ArrowDown']],
   ['inbox.prev', 'Inbox', 'Previous', ['K', 'ArrowUp']],
   ['inbox.open', 'Inbox', 'Open in reader', ['O', 'Space']],
+  ['inbox.ask', 'Inbox', 'Ask AI about this entry', ['A']],
   ['tax.new', 'Taxonomy', 'New concept', ['N']],
   ['ask.new', 'Ask', 'New chat', ['N']]
 ];
@@ -1335,6 +1639,8 @@ function commands() {
       { group: 'This bookmark', label: 'Add a tag', hint: 'reader.tag', run: () => focusTagInput() },
       { group: 'This bookmark', label: 'Keep', hint: 'reader.keep', run: () => triageReader('kept') },
       { group: 'This bookmark', label: 'Archive', hint: 'reader.archive', run: () => triageReader('archived') },
+      { group: 'This bookmark', label: store.overrides[r.id]?.stackedAt ? 'Take off the stack' : 'Add to stack', hint: 'reader.stack', run: () => toggleStack(r.id) },
+      ...(store.overrides[r.id]?.deleted ? [] : [{ group: 'This bookmark', label: isRead(r) ? 'Mark unread' : 'Mark as read', hint: 'reader.done', run: () => toggleRead(r.id) }]),
       store.overrides[r.id]?.deleted ? { group: 'This bookmark', label: 'Restore from Trash', run: restoreReader } : { group: 'This bookmark', label: 'Move to Trash', hint: 'reader.delete', run: () => triageReader('deleted') },
       { group: 'This bookmark', label: 'Copy link', run: () => { navigator.clipboard?.writeText(location.origin + `/b/${r.id}`); toast('Link copied'); } }
     ] : []),
@@ -1348,7 +1654,7 @@ function commands() {
     { group: 'Actions', label: 'Clear search and filters', hint: 'lib.clear', run: lib(clearAll) },
     { group: 'Actions', label: 'Show untriaged', run: lib(() => { ui.status = 'inbox'; }) },
     ...[['newest', 'bookmarked', 'Sort: recently saved'], ['saves', 'saves', 'Sort: most saved'], ['longest', 'longest', 'Sort: longest reads']].map(([, v, l]) => ({ group: 'Actions', label: l, run: lib(() => savePrefs({ sort: v })) })),
-    ...SORTS.map(([v, l]) => ({ group: 'Inbox', label: `Triage by: ${l}`, run: () => { closeReader(); savePrefs({ inboxSort: v }); ui.inboxId = null; navigate('/inbox'); } })),
+    ...SORTS.map(([v, l]) => ({ group: 'Inbox', label: `Triage by: ${l}`, run: () => { closeReader(); if (v === 'random') reshuffleRandomSort(); savePrefs({ inboxSort: v }); ui.inboxId = null; navigate('/inbox'); } })),
     ...FORMAT_TABS.map(([v, l]) => ({ group: 'Inbox', label: v === 'all' ? 'Triage: all types' : `Triage only: ${l}`, run: () => { closeReader(); savePrefs({ inboxFormat: v }); ui.inboxId = null; navigate('/inbox'); } })),
     { group: 'Actions', label: `Toggle dark mode`, hint: 'theme', run: toggleTheme },
     { group: 'Actions', label: 'Rebuild index from FieldTheory', run: async () => { toast('Rebuilding…'); await api('/api/refresh', { method: 'POST' }).catch(e => toast(e.message)); await loadAll(); render(); toast('Rebuilt'); } },
@@ -1444,6 +1750,41 @@ async function triageReader(value) {
   toast(clear ? 'Moved back to the inbox' : value === 'kept' ? 'Kept' : value === 'archived' ? 'Archived' : 'Moved to Trash · deleted in 30 days', { undo: true });
   const r = store.byId.get(id); if (r) $('#reader-body').innerHTML = readerContent(r);
 }
+// Re-render wherever this bookmark is showing: the reader, the inbox's triage pane, or the library.
+function repaintBookmark(id) {
+  const r = store.byId.get(id);
+  if (!r) return;
+  const readerOpen = !$('#reader').hidden;
+  if (readerOpen && ui.readerId === id) $('#reader-body').innerHTML = readerContent(r);
+  if (ui.view === 'inbox' && ui.inboxId === id && $('#triage-body')) $('#triage-body').innerHTML = readerContent(r, { docked: true });
+  else if (ui.view === 'library' && !readerOpen) refreshCards();
+}
+const shortTitle = (r) => { const t = titleOf(r, 60); return t.length > 44 ? `${t.slice(0, 44).replace(/\s+\S*$/, '')}…` : t; };
+async function toggleStack(id) {
+  if (!store.byId.has(id)) return;
+  if (store.overrides[id]?.stackedAt) {
+    await saveOverride([id], { stackedAt: null }, { label: 'Take off the stack' });
+    toast('Taken off the stack', { undo: true });
+  } else {
+    // First in, first out: make room by letting the oldest go.
+    const rest = stackAll().filter(r => r.id !== id);
+    const out = rest.slice(0, Math.max(0, rest.length - STACK_MAX + 1));
+    await saveEach({ [id]: { stackedAt: new Date().toISOString() }, ...Object.fromEntries(out.map(r => [r.id, { stackedAt: null }])) }, { label: 'Add to stack' });
+    toast(out.length ? `On the stack · “${shortTitle(out[0])}” made room` : `On the stack · ${rest.length + 1} of ${STACK_MAX}`, { undo: true });
+  }
+  repaintBookmark(id);
+}
+async function toggleRead(id) {
+  const o = store.overrides[id] || {};
+  if (!store.byId.has(id) || o.deleted) return;
+  // Unmarking keeps readAt, so "last read" survives; finishing a stacked read takes it off the stack.
+  if (o.read) { await saveOverride([id], { read: null }, { label: 'Mark unread' }); toast('Marked unread', { undo: true }); }
+  else {
+    await saveOverride([id], { read: true, readAt: new Date().toISOString(), ...(o.stackedAt ? { stackedAt: null } : {}) }, { label: 'Mark read' });
+    toast(o.stackedAt ? 'Read · off the stack' : 'Marked read', { undo: true });
+  }
+  repaintBookmark(id);
+}
 async function restoreReader() {
   const id = ui.readerId; if (!id) return;
   await saveOverride([id], { deleted: null }, { label: 'Restore' });
@@ -1509,8 +1850,8 @@ function inboxStep(d) {
   const next = q[i + d];
   if (!next) return;
   ui.inboxId = next.id; renderInbox();
-  $('.triage-scroll')?.scrollTo(0, 0);
-  $(`#queue-list [data-pick="${next.id}"]`)?.scrollIntoView({ block: 'nearest' });
+  scrollTriageTop();
+  ensureQueueVisible(next.id);
 }
 
 // Dispatcher ---------------------------------------------------------------
@@ -1532,9 +1873,11 @@ const ACTIONS = {
   'reader.note': () => { showReaderTab('read'); const n = $('#reader [data-note]'); n?.scrollIntoView({ block: 'center' }); n?.focus(); },
   'reader.open': () => { const r = store.byId.get(ui.readerId); if (r) window.open(r.url, '_blank', 'noopener'); },
   'reader.keep': () => triageReader('kept'), 'reader.archive': () => triageReader('archived'), 'reader.delete': () => triageReader('deleted'),
+  'reader.stack': () => ui.readerId && toggleStack(ui.readerId), 'reader.done': () => ui.readerId && toggleRead(ui.readerId),
   'inbox.keep': () => triageCurrent('kept'), 'inbox.archive': () => triageCurrent('archived'), 'inbox.delete': () => triageCurrent('deleted'),
   'inbox.next': () => inboxStep(1), 'inbox.prev': () => inboxStep(-1),
   'inbox.open': () => ui.inboxId && openReader(ui.inboxId, ui.inboxQueue),
+  'inbox.ask': () => ui.inboxId && toggleInboxChat(),
   'tax.new': () => { ui.taxSelected = '__new'; renderTaxonomy(); $('.t-form input[name=label]')?.focus(); },
   'ask.new': () => $('[data-new-chat]')?.click()
 };
@@ -1557,7 +1900,8 @@ document.addEventListener('keydown', async (ev) => {
   }
   if ($('#help')) { if (ev.key === 'Escape' || bindingsOf('help').includes(combo)) { ev.preventDefault(); hideHelp(); } return; }
 
-  if (t.matches('.composer textarea') && ev.key === 'Enter' && !ev.shiftKey && !ev.isComposing) { ev.preventDefault(); t.form.requestSubmit(); return; }
+  if (t.matches('.composer textarea, .msg-edit textarea') && ev.key === 'Enter' && !ev.shiftKey && !ev.isComposing) { ev.preventDefault(); t.form.requestSubmit(); return; }
+  if (t.matches('.msg-edit textarea') && ev.key === 'Escape') { ev.preventDefault(); ev.stopPropagation(); messageAction(sessions.get(t.closest('[data-chat]').dataset.chat), 'cancel-edit'); return; }
   if (t.matches('[data-tag-input]')) {
     const list = $('.suggest', t.closest('.tag-add'));
     const btns = $$('button', list); const i = btns.findIndex(b => b.classList.contains('hi'));
@@ -1575,6 +1919,7 @@ document.addEventListener('keydown', async (ev) => {
   }
   if (ev.key === 'Escape' && readerOpen) { closeReader(); return; }
   if (ev.key === 'Escape' && ui.mobileRail) { setRail(false); return; }
+  if (ev.key === 'Escape' && ui.view === 'inbox' && ui.inboxChat) { toggleInboxChat(false); return; }
 
   const ctx = readerOpen ? 'Reader' : { library: 'Library', inbox: 'Inbox', taxonomy: 'Taxonomy', ask: 'Ask', settings: 'Settings' }[ui.view];
   const active = KEYMAP.filter(([, g]) => g === 'Anywhere' || g === 'Go to' || g === ctx);
@@ -1588,7 +1933,7 @@ document.addEventListener('keydown', async (ev) => {
   // Fixed navigation keys.
   if (ctx === 'Library') {
     if (ARROWS[combo]) { ev.preventDefault(); moveCard(ARROWS[combo]); return; }
-    if ((combo === 'Enter' || combo === 'O') && t.dataset?.open) { ev.preventDefault(); openReader(t.dataset.open, ui.results); return; }
+    if ((combo === 'Enter' || combo === 'O') && t.dataset?.open) { ev.preventDefault(); openReader(t.dataset.open, t.closest('.stack') ? stackList() : ui.results); return; }
   }
   if (ctx === 'Taxonomy') {
     if (combo === 'ArrowDown' || combo === 'J') { ev.preventDefault(); moveTaxonomy(1); }

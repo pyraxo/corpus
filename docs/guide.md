@@ -14,7 +14,7 @@ Press `⌘K` (or `Ctrl K`) for the command palette. It searches bookmarks, jumps
 
 - **Anywhere:** `/` search · `g l/i/a/t/s` go to Library, Inbox, Ask, Taxonomy, Settings · `⇧D` dark mode · `esc` back
 - **Library:** arrow keys or `h j k l` move between cards in wall, grid and list · `⏎`/`o` open · `1 2 3` layout · `x` clear filters
-- **Reader:** `j/k` or `←/→` next/previous · `c`/`r` chat/read · `t` tag · `n` note · `o` open on X · `m`/`e` keep/archive
+- **Reader:** `j/k` or `←/→` next/previous · `c`/`r` chat/read · `t` tag · `n` note · `o` open on X · `m`/`e` keep/archive · `s` stack · `d` done reading
 - **Inbox:** `⏎` keep · `e` archive · `j/↓` next · `k/↑` previous · `o` open
 
 ## Run
@@ -27,7 +27,7 @@ The server rebuilds the index whenever the FieldTheory JSONL changes (checked ev
 
 ## Backfill: threads, then Jev
 
-Most bookmarks only save the first tweet. The backfill reads X's `TweetDetail` endpoint (read-only GET) with the same session cookies FieldTheory uses (`CT0` and `AUTH_TOKEN` from `~/.hermes/workspace/.env`, or `X_CT0`/`X_AUTH_TOKEN`). For each bookmark it captures the author's full self-thread (following pagination, including bookmarks that point mid-thread), long-form X articles, link cards, the full text of note tweets, and quoted posts. It then classifies each bookmark with Jev using that full content.
+Most bookmarks only save the first tweet. The backfill reads X's `TweetDetail` endpoint (read-only GET) with the same session cookies FieldTheory uses (`CT0` and `AUTH_TOKEN` from `~/.hermes/workspace/.env`, or `X_CT0`/`X_AUTH_TOKEN`). For each bookmark it captures the author's full self-thread (following pagination, including bookmarks that point mid-thread), long-form X articles, link cards, the full text of note tweets, and quoted posts. A quoted post is unrolled the same way (its own thread, article and link card), so a quote post is read, tagged and shown as the post followed by the full quoted post. Quote posts captured before this get their quoted post filled in on the next backfill (one extra request each) and are then reclassified. It then classifies each bookmark with Jev using that full content.
 
 ```sh
 npm run backfill                  # unroll everything; Jev classifies as items become ready
@@ -43,7 +43,7 @@ Tags come from three sources, and your edits always win:
 
 1. FieldTheory's LLM domains and categories, mapped onto the taxonomy
 2. Keyword rules from each concept's aliases
-3. TypeSafe Jev: one Choice question over all topics and one over kinds, asked about the full thread/article text. Jev's per-option probabilities become tag confidences. The cost is about $0.04 per million input tokens, roughly $0.55 for the whole library. Results are cached in `data/classify/`.
+3. TypeSafe Jev: one Choice question over all topics and one over kinds, asked about the full content: every thread part with its own images, link cards and quoted posts, plus the article, link card and quote. Jev reads only text, so images and video poster frames are first described by a vision model on OpenRouter (`DESCRIBE_MODEL`, default `google/gemini-2.5-flash-lite`, about $0.0002 per bookmark, cached in `data/describe/`). Alt text is used when the author wrote it. Without `OPENROUTER_API_KEY` media is skipped, and those bookmarks are reclassified once the key is set. Jev's per-option probabilities become tag confidences. The cost is about $0.04 per million input tokens, roughly $0.55 for the whole library. Results are cached in `data/classify/`.
 
 Signals are combined per tag (1 − Π(1 − s)). Keyword or FieldTheory tags that Jev doesn't corroborate are discounted. Cards show the three most confident topic/kind/label tags; hover a tag to see its confidence and sources.
 
@@ -61,11 +61,16 @@ Format is derived from the content. A thread is anything with two or more self-r
 | --- | --- |
 | `data/state.json` | your tag overrides, notes, triage state, taxonomy edits |
 | `data/build/` | generated index served at `/data/*` |
-| `data/enrich/`, `data/classify/` | per-bookmark caches |
+| `data/enrich/`, `data/classify/`, `data/describe/` | per-bookmark caches |
 | `data/manual.json` | bookmarks saved by URL (web pages) |
 | `data/skills/`, `data/chats/` | skills and saved conversations |
 
 Secrets go in the ignored `.env` (`TYPESAFE_API_KEY`, `OPENROUTER_API_KEY`, `CORPUS_PASSWORD_HASH`, `CORPUS_SESSION_SECRET`, `CORPUS_MCP_TOKEN`), which the server and scripts load on start.
+
+## The stack and read state
+
+- **The stack** is a short reading list, at the top of the Library: at most five bookmarks, first in first out. Add one from the reader (**Add to stack**, `s`); when the stack is full, adding a sixth lets the oldest go. Remove one with its `×`, or press `s` again in the reader.
+- **Done reading** (`d`, in the reader) labels a bookmark read, records when, and takes it off the stack. Press it again to mark it unread; the reader still shows when you last read it. Read is a label, not a triage status: cards show a small *Read* mark, the **Recently read** sort orders by when you finished, and bookmarks in Trash don't carry it.
 
 ## Archive, Trash and undo
 

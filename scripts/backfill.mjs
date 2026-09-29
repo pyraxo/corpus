@@ -1,4 +1,5 @@
-// Backfill: unroll every thread / article / link card, then classify each bookmark
+// Backfill: unroll every thread / article / link card (and the quoted post's, for
+// quote posts), then classify each bookmark
 // with Jev using its full captured content. Resumable — rerun any time.
 // The server's own worker pauses while this holds the lock.
 //
@@ -33,8 +34,11 @@ const enricher = new Enricher({ log, respectLock: false, onBatch: async () => { 
 if (doEnrich) {
   if (!(await enricher.init())) { log(enricher.lastError); enrichDone = true; }
   else {
-    enricher.enqueue(latest.pending.slice(0, limit));
-    log(`unrolling ${enricher.queue.length} bookmarks (X allows ~300 per 15 min)`);
+    // Quote posts captured before quotes were unrolled get their quoted thread / article too.
+    const queued = [...latest.pending, ...latest.quotePending].slice(0, limit);
+    enricher.enqueue(queued);
+    const quotes = Math.max(0, queued.length - latest.pending.length);
+    log(`unrolling ${queued.length - quotes} bookmarks and ${quotes} quoted posts (X allows ~300 per 15 min)`);
     (async () => { while (enricher.running || enricher.queue.length) await new Promise(r => setTimeout(r, 2000)); enrichDone = true; })();
   }
 }
@@ -45,11 +49,13 @@ for (;;) {
   const finalRound = enrichDone;
   if (doClassify && budget > 0) {
     const ready = [];
-    for (const r of latest.records) if (ready.length < budget && await needsClassification(r)) ready.push(r);
+    // Quote posts whose quoted thread is still being read wait, so they're classified once.
+    const waiting = new Set(finalRound ? [] : latest.quotePending.map(p => p.id));
+    for (const r of latest.records) if (ready.length < budget && !waiting.has(r.id) && await needsClassification(r)) ready.push(r);
     // Wait for a worthwhile batch while X is still being read.
     if (ready.length >= (finalRound ? 1 : 20)) {
       log(`classifying ${ready.length} with Jev`);
-      const res = await classifyMany(ready, latest.concepts, { log });
+      const res = await classifyMany(ready, latest.concepts, { concurrency: 8, describeConcurrency: 24, log });
       budget -= ready.length;
       progress.classified += res.ok; progress.failed += res.failed; progress.tokens += res.tokens;
       latest = await build({ log });
