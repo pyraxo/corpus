@@ -12,6 +12,7 @@ export const KEYMAP = [
   ['search', 'Anywhere', 'Search the library', ['/']],
   ['help', 'Anywhere', 'Keyboard shortcuts', ['?']],
   ['theme', 'Anywhere', 'Toggle dark mode', ['Shift+D']],
+  ['add', 'Anywhere', 'Add files or links', ['Shift+A']],
   ['go.library', 'Go to', 'Library', ['G L']],
   ['go.inbox', 'Go to', 'Inbox', ['G I']],
   ['go.ask', 'Go to', 'Ask', ['G A']],

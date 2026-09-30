@@ -11,7 +11,7 @@ import { api, formatOf, isRead, label, loadAll, who } from '../data/library.js';
 import { FORMAT_TABS, SORTS, matchesQuery, query, reshuffleRandomSort, sortRecords } from '../data/query.js';
 import { sendChat, session } from '../features/chat.js';
 import { toggleRead, toggleStack } from '../features/marks.js';
-import { pickFiles } from '../features/uploads.js';
+import { openAddDialog } from '../views/add-dialog.js';
 import { avatarOf, snippet } from '../ui/format.js';
 import { toast } from '../ui/toast.js';
 import { closeReader, focusTagInput, libraryLabel, openBookmark, restoreReader, showReaderTab, triageReader } from '../views/dialog.js';
@@ -45,7 +45,7 @@ function commands() {
     go('Library', '/', 'go.library'), go('Inbox', '/inbox', 'go.inbox'), go('Highlights', '/highlights', 'go.highlights'), go('Ask', '/ask', 'go.ask'), go('Taxonomy', '/taxonomy', 'go.taxonomy'), go('Settings', '/settings', 'go.settings'), go('Archive', '/archive', 'go.archive'), go('Trash', '/trash', 'go.trash'),
     { group: 'Actions', label: undoStack.length ? `Undo: ${undoStack.at(-1).label}` : 'Undo', hint: 'undo', run: undo },
     { group: 'Actions', label: redoStack.length ? `Redo: ${redoStack.at(-1).label}` : 'Redo', hint: 'redo', run: redo },
-    { group: 'Actions', label: 'Add files: images, PDFs, EPUB or MOBI books, text', run: () => pickFiles() },
+    { group: 'Actions', label: 'Add files or links: images, PDFs, books, text, web pages', hint: 'add', run: () => openAddDialog() },
     { group: 'Actions', label: 'Open in Reader: the library as it’s filtered now', run: () => { closeReader(); const list = sortRecords(query(), prefs.sort); if (list[0]) { const was = prefs.openIn; prefs.openIn = 'reader'; openBookmark(list[0].id, list, libraryLabel()); prefs.openIn = was; } } },
     { group: 'Actions', label: 'Triage the inbox', run: () => { closeReader(); navigate('/inbox'); } },
     { group: 'Actions', label: 'Open the inbox scratchpad', hint: 'inbox.pad', run: () => { closeReader(); ui.inboxPad = true; navigate('/inbox'); } },

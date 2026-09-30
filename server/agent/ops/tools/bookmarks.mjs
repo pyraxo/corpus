@@ -1,11 +1,9 @@
 // Changing bookmarks: tags, triage and scratchpads, one or many; adding and deleting.
-import { addManual } from '../../../library/manual.mjs';
-import { maxSortIndex } from '../../../files/store.mjs';
 
 const CONFIRM_OVER = 25;
 
 export default function bookmarksTools(kit) {
-  const { ctx, select, selector, applyPatch, ingest, fetchFile, needConfirm, rebuild } = kit;
+  const { ctx, select, selector, applyPatch, ingest, fetchFile, needConfirm, saveLink } = kit;
   return [
     {
       name: 'update_bookmark', write: true, description: 'Change one bookmark: add/remove tags (names, paths or ids; unknown names become new personal labels), set triage (kept | archived | untriaged), replace or clear its scratchpad (to add to it instead, use write_scratchpad), or restore a deleted bookmark (deleted: false).',
@@ -35,7 +33,7 @@ export default function bookmarksTools(kit) {
       }
     },
     {
-      name: 'create_bookmark', write: true, description: 'Save any web page into Corpus by URL (fetches its text so it can be read, searched, chatted with and classified). A link to a PDF, EPUB or MOBI book, or an image, is downloaded and added as a file with its own reader and Jev tagging. Optionally tag it and start its scratchpad.',
+      name: 'create_bookmark', write: true, description: 'Save any web page into Corpus by URL. The page is read as an article (title, author, date, cover and body) so it can be read in the reader, searched, chatted with and classified by Jev. A link to a PDF, EPUB or MOBI book, or an image, is downloaded and added as a file with its own reader and Jev tagging. Optionally tag it and start its scratchpad.',
       input: { type: 'object', properties: { url: { type: 'string' }, title: { type: 'string' }, text: { type: 'string', description: 'Use instead of fetching the page' }, scratchpad: { type: 'string' }, tags: { type: 'array', items: { type: 'string' } } }, required: ['url'] },
       run: async (a) => {
         const file = await fetchFile(a.url);
@@ -44,10 +42,9 @@ export default function bookmarksTools(kit) {
           if (a.tags?.length || a.scratchpad) await applyPatch(await ctx(), [res.id], { add_tags: a.tags, scratchpad: a.scratchpad });
           return { ok: true, id: res.id, title: res.title, kind: res.kind, job: res.job, summary: res.duplicate ? `Already saved as ${res.id}` : `Added “${res.title}” (${res.kind}) as ${res.id}` };
         }
-        const item = await addManual({ url: a.url, title: a.title, text: a.text }, { maxSortIndex: await maxSortIndex() });
-        await rebuild('ops:create');
-        if (a.tags?.length || a.scratchpad) await applyPatch(await ctx(), [item.id], { add_tags: a.tags, scratchpad: a.scratchpad });
-        return { ok: true, id: item.id, title: item.title, fetched_chars: item.text.length, summary: `Saved “${item.title}” as ${item.id}` };
+        const res = await saveLink({ url: a.url, title: a.title, text: a.text });
+        if (a.tags?.length || a.scratchpad) await applyPatch(await ctx(), [res.id], { add_tags: a.tags, scratchpad: a.scratchpad });
+        return { ok: true, ...res, kind: 'web', summary: res.duplicate ? `Already saved as ${res.id}` : `Saved “${res.title}” (${res.isArticle ? `article, ${res.words} words` : 'page'}) as ${res.id}` };
       }
     },
     {

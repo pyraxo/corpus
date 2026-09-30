@@ -1,8 +1,8 @@
 // Corpus service worker: installable app shell, offline reading, fast repeat loads.
 // Never caches the API, chat, MCP or the sign-in page.
-const VERSION = 'corpus-v37';
+const VERSION = 'corpus-v38';
 // The shell: the page and its entry points. Modules they import are cached as they're fetched.
-const SHELL = ['/', '/js/main.js', '/css/base.css', '/css/controls.css', '/css/masthead.css', '/css/library.css', '/css/reader.css', '/css/inbox.css', '/css/pages.css', '/css/chat.css', '/css/palette.css', '/css/dropdown.css', '/css/highlights.css', '/css/sidebar.css', '/css/files.css', '/manifest.webmanifest', '/icons/icon-192.png', '/icons/apple-touch-icon.png'];
+const SHELL = ['/', '/js/main.js', '/css/base.css', '/css/controls.css', '/css/masthead.css', '/css/library.css', '/css/reader.css', '/css/inbox.css', '/css/pages.css', '/css/chat.css', '/css/palette.css', '/css/dropdown.css', '/css/highlights.css', '/css/sidebar.css', '/css/files.css', '/css/add.css', '/manifest.webmanifest', '/icons/icon-192.png', '/icons/apple-touch-icon.png'];
 const SHELL_CACHE = `${VERSION}-shell`, DATA_CACHE = 'corpus-data', MEDIA_CACHE = 'corpus-media';
 const MEDIA_MAX = 400;
 // A stalled request must never wedge install or leave the app blank on a bad connection.

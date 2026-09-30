@@ -47,6 +47,7 @@ async function fullRecord(ix, r, { withPage = true } = {}) {
   const link = r.card?.url || r.links?.find(l => !/(x|twitter)\.com\//.test(l));
   if (withPage && link && r.format !== 'format:article' && r.provider !== 'web') {
     const page = await fetchPage(link);
+    if (page?.ok) page.text = page.text.slice(0, 24000);
     if (page?.ok) lines.push('', `--- Linked page: ${page.title || page.url} (${page.url}) ---`, page.text);
   }
   return lines.join('\n');

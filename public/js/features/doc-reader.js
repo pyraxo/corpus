@@ -30,8 +30,9 @@ async function openPdf(id, file) {
 // Where you are in each open document, newest first; survives repaints of the reader.
 const lastPos = new Map();
 const mounted = new Set();
-const locKey = (loc) => !loc ? '' : loc.page != null ? `p:${loc.page}` : loc.ch != null ? `ch:${loc.ch}` : '';
-export const parseLoc = (s = '') => { const m = /^(p|ch):(\d+)$/.exec(s); return m ? (m[1] === 'p' ? { page: Number(m[2]) } : { ch: Number(m[2]) }) : null; };
+// Where a highlight is: a PDF page, a book chapter, or a part of a post (the article it links to).
+const locKey = (loc) => !loc ? '' : loc.page != null ? `p:${loc.page}` : loc.ch != null ? `ch:${loc.ch}` : loc.part || '';
+export const parseLoc = (s = '') => { const m = /^(p|ch):(\d+)$/.exec(s); return m ? (m[1] === 'p' ? { page: Number(m[2]) } : { ch: Number(m[2]) }) : /^[a-z]+$/.test(s) ? { part: s } : null; };
 export { locKey };
 
 // The element that scrolls the reader: the inbox pane, the dialog sheet, or the page itself.

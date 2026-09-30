@@ -1,0 +1,43 @@
+/* The Add dialog: drop or choose files, paste links; each item's progress below. */
+.add-box { position: absolute; left: 50%; top: 10vh; transform: translateX(-50%); width: min(560px, calc(100vw - 24px)); max-height: 80vh; display: flex; flex-direction: column; background: var(--surface); border: 1px solid var(--rule-2); border-radius: 16px; box-shadow: 0 24px 80px rgba(0, 0, 0, 0.18); animation: rise 0.16s ease-out; overflow: hidden; }
+.add-head { display: flex; align-items: center; justify-content: space-between; padding: 18px 20px 6px; }
+.add-head h2 { margin: 0; font-size: 28px; line-height: 1.1; }
+.add-head .x { width: 28px; height: 28px; border-radius: 50%; color: var(--ink-3); font-size: 18px; display: grid; place-items: center; }
+.add-head .x:hover { background: var(--sunk); color: var(--ink); }
+.add-drop { margin: 10px 20px 0; display: grid; justify-items: center; gap: 6px; padding: 26px 20px 22px; border: 1.5px dashed var(--rule-2); border-radius: 12px; background: var(--bg); color: var(--ink-2); text-align: center; transition: border-color 0.15s, background 0.15s; }
+.add-drop:hover, .add-drop:focus-visible, .add-drop.over { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 6%, var(--bg)); }
+.add-drop-icon svg { width: 26px; height: 26px; fill: none; stroke: var(--ink-3); stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.add-drop.over .add-drop-icon svg { stroke: var(--accent-ink); }
+.add-drop-text { font-size: 14px; }
+.add-drop-text strong { font-weight: 500; color: var(--ink); }
+.add-drop-text u { text-decoration-color: var(--rule-2); text-underline-offset: 3px; }
+.add-kinds { font: 10.5px var(--mono); letter-spacing: 0.04em; color: var(--ink-3); }
+.add-or { display: flex; align-items: center; gap: 12px; margin: 16px 20px 10px; font: 500 10px var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-3); }
+.add-or::before, .add-or::after { content: ''; flex: 1; height: 1px; background: var(--rule); }
+.add-link { display: flex; align-items: center; gap: 8px; margin: 0 20px; padding: 4px 4px 4px 12px; border: 1px solid var(--rule-2); border-radius: 10px; background: var(--bg); }
+.add-link:focus-within { border-color: var(--ink-3); }
+.add-link-icon svg { width: 15px; height: 15px; display: block; fill: none; stroke: var(--ink-3); stroke-width: 1.5; stroke-linecap: round; }
+.add-link input { flex: 1; min-width: 0; height: 32px; border: 0; outline: 0; background: none; font-size: 14px; }
+.add-link .primary { height: 30px; }
+.add-hint { margin: 8px 20px 0; line-height: 1.45; }
+.add-items { list-style: none; margin: 14px 0 0; padding: 0 12px; overflow-y: auto; display: grid; gap: 2px; }
+.add-items:empty { display: none; }
+.add-item { display: flex; align-items: center; gap: 12px; padding: 8px; border-radius: 10px; }
+.add-item:hover { background: var(--sunk); }
+.add-thumb { flex: none; width: 40px; height: 40px; border-radius: 7px; overflow: hidden; display: grid; place-items: center; background: var(--sunk); border: 1px solid var(--rule); }
+.add-thumb img { width: 100%; height: 100%; object-fit: cover; }
+.add-thumb img.fav { width: 20px; height: 20px; object-fit: contain; }
+.add-thumb svg { width: 18px; height: 18px; fill: none; stroke: var(--ink-3); stroke-width: 1.4; stroke-linejoin: round; }
+.add-what { flex: 1; min-width: 0; display: grid; gap: 2px; }
+.add-what strong { font-weight: 500; font-size: 13.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.add-status { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.add-item[data-state='error'] .add-status { color: var(--accent-ink); white-space: normal; }
+.add-item[data-state='duplicate'] .add-status { color: var(--ink-2); }
+.spin { flex: none; width: 10px; height: 10px; border-radius: 50%; border: 1.5px solid var(--rule-2); border-top-color: var(--accent); animation: spin 0.7s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.add-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 12px; padding: 12px 20px 16px; border-top: 1px solid var(--rule); }
+@media (max-width: 860px) {
+  .add-box { top: auto; bottom: 0; width: 100%; max-height: 88vh; border-radius: 16px 16px 0 0; transform: translateX(-50%); padding-bottom: env(safe-area-inset-bottom); }
+  .add-link input { font-size: 16px; }
+  .add-drop { padding: 20px 16px; }
+}

@@ -9,9 +9,13 @@ import { defaultConcepts } from '../../library/taxonomy.mjs';
 import { lockHolder } from '../../capture/lock.mjs';
 import { requestPriority } from '../../capture/priority.mjs';
 import { MODELS } from '../../agent/chat.mjs';
+import { fetchPage, isXUrl } from '../../capture/pages.mjs';
 import { send, readJson } from '../respond.mjs';
 
 const defaultIds = new Set(defaultConcepts().map(c => c.id));
+// Pages that are never articles, whatever their text says.
+const NOT_ARTICLES = /^https?:\/\/([\w-]+\.)*(youtube\.com|youtu\.be|vimeo\.com|open\.spotify\.com|music\.apple\.com|apps\.apple\.com|play\.google\.com|tiktok\.com|instagram\.com)\//i;
+const linkedUrl = (rec) => { const u = rec.card?.url || rec.links?.find(l => !isXUrl(l)); return u && !isXUrl(u) && !NOT_ARTICLES.test(u) ? u : null; };
 
 export function libraryRoutes(r) {
   r.get('/api/status', async ({ res, core }) => send(res, 200, await core.status()));
@@ -90,6 +94,17 @@ export function libraryRoutes(r) {
     requestPriority(String(id));
     core.enricher.kick();
     send(res, 200, { ok: true, backfill: !!lockHolder() });
+  });
+  // The article a post links to, read the first time it's opened (then cached), for the reader to
+  // show under the post. Only pages that read as articles come back.
+  r.get('/api/linked/:id', async ({ res, params, core }) => {
+    const rec = (await core.getIndex()).byId.get(params.id);
+    if (!rec || rec.provider !== 'twitter') return send(res, 404, { ok: false });
+    const url = linkedUrl(rec);
+    const page = url && await fetchPage(url);
+    const a = page?.article;
+    if (!page?.ok || !a?.isArticle) return send(res, 200, { ok: false, url });
+    send(res, 200, { ok: true, url: page.url, article: { title: a.title, byline: a.byline, site: a.site, siteName: a.siteName, published: a.published, cover: a.cover, words: a.words, blocks: a.blocks } });
   });
   r.get('/api/archive/:id', async ({ res, params, core }) => {
     const rec = (await core.getIndex()).byId.get(params.id);

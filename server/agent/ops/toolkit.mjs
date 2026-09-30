@@ -3,8 +3,9 @@
 // background jobs, and adding files.
 import { readState, writeState } from '../../library/state.mjs';
 import { slugify } from '../../library/skills.mjs';
-import { recordText, classifyFile } from '../../classify/jev.mjs';
-import { ingestFile, updateDoc, FILE_TYPES } from '../../files/store.mjs';
+import { recordText, classifyFile, classifyMany } from '../../classify/jev.mjs';
+import { addManual } from '../../library/manual.mjs';
+import { ingestFile, updateDoc, maxSortIndex, FILE_TYPES } from '../../files/store.mjs';
 import crypto from 'node:crypto';
 
 const day = (iso) => (iso || '').slice(0, 10);
@@ -152,6 +153,32 @@ export function createToolkit({ getIndex, rebuild, enricher, log = () => {} }) {
   const whereOf = (r, h) => !r.doc || !h.loc ? undefined : h.loc.page != null ? `page ${h.loc.page + 1} (section ${h.loc.page})` : h.loc.ch != null ? `section ${h.loc.ch}` : undefined;
 
   // A new file: parse and store it, add it to the index, then tag it with Jev in the background.
+  // A web page by link: read as an article, saved, added to the index, and tagged by Jev in the background.
+  async function saveLink({ url, title, text }) {
+    const item = await addManual({ url, title, text }, { maxSortIndex: await maxSortIndex() });
+    const about = { id: item.id, title: item.title, site: item.site, words: item.article?.words ?? item.text.split(/\s+/).length, isArticle: !!item.article?.isArticle };
+    if (item.duplicate) return { ...about, duplicate: true };
+    await rebuild('link');
+    let job = null;
+    if (process.env.TYPESAFE_API_KEY) {
+      tagging.add(item.id);
+      job = { id: crypto.randomUUID().slice(0, 8), kind: 'link-tagging', bookmark: item.id, status: 'running', startedAt: new Date().toISOString() };
+      jobs.set(job.id, job);
+      (async () => {
+        try {
+          const c = await ctx();
+          const res = await classifyMany([c.ix.byId.get(item.id)], c.ix.concepts, { concurrency: 1, log });
+          if (!res.ok) throw new Error('Jev couldn’t classify it');
+          const done = await rebuild('link:jev');
+          Object.assign(job, { status: 'done', tags: (done.records.find(r => r.id === item.id)?.tags || []).filter(t => /^(topic|kind):/.test(t.id)).map(t => t.id) });
+        } catch (e) { Object.assign(job, { status: 'failed', error: e.message }); log(`[links] tagging ${item.id}: ${e.message}`); }
+        tagging.delete(item.id);
+        job.finishedAt = new Date().toISOString();
+      })();
+    }
+    return { ...about, job: job?.id || null };
+  }
+
   async function ingest(data, name) {
     const doc = await ingestFile({ data, name });
     if (doc.duplicate) return { id: doc.id, title: doc.title, kind: doc.kind, duplicate: true };
@@ -203,5 +230,5 @@ export function createToolkit({ getIndex, rebuild, enricher, log = () => {} }) {
 
   // ── tool definitions ──
 
-  return { getIndex, rebuild, enricher, log, jobs, tagging, facetOf, effectiveTags, statusOf, ctx, resolveConcept, compact, select, filterProps, selector, applyPatch, createConceptRaw, whereOf, ingest, fetchFile, needConfirm };
+  return { getIndex, rebuild, enricher, log, jobs, tagging, facetOf, effectiveTags, statusOf, ctx, resolveConcept, compact, select, filterProps, selector, applyPatch, createConceptRaw, whereOf, ingest, saveLink, fetchFile, needConfirm };
 }

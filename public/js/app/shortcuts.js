@@ -21,6 +21,7 @@ import { currentDoc } from '../views/post.js';
 import { inboxStep, readDelete, readTriage, setMode, triageCurrent } from '../views/reader/index.js';
 import { renderSettings } from '../views/settings.js';
 import { moveTaxonomy, renderTaxonomy } from '../views/taxonomy.js';
+import { openAddDialog } from '../views/add-dialog.js';
 
 const ARROWS = { ArrowDown: 'down', ArrowUp: 'up', ArrowLeft: 'left', ArrowRight: 'right', J: 'down', K: 'up', H: 'left', L: 'right' };
 const GO = { 'go.library': '/', 'go.inbox': '/inbox', 'go.highlights': '/highlights', 'go.ask': '/ask', 'go.taxonomy': '/taxonomy', 'go.settings': '/settings', 'go.archive': '/archive', 'go.trash': '/trash' };
@@ -30,6 +31,7 @@ const ACTIONS = {
   search: () => { if (ui.view !== 'library') navigate('/'); $('#search').focus(); $('#search').select(); },
   help: showHelp,
   theme: toggleTheme,
+  add: () => openAddDialog(),
   ...Object.fromEntries(Object.entries(GO).map(([id, path]) => [id, () => { closeReader(); navigate(path); }])),
   'lib.wall': () => setLayout('wall'), 'lib.grid': () => setLayout('grid'), 'lib.list': () => setLayout('list'),
   'lib.clear': () => { clearAll(); syncUrl(); renderLibrary(); },

@@ -1,36 +1,46 @@
-// Fetch and cache readable text from a bookmark's linked page for chat context.
+// Web pages, fetched once and kept in data/cache/pages/: the page as an article (capture/article.mjs)
+// and its plain text. Used to save a link as a bookmark, to show the article a tweet links to,
+// and to give chat and agents the linked page.
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { paths } from '../config/paths.mjs';
+import { extractArticle } from './article.mjs';
 
 const dir = path.join(paths.cache, 'pages');
-const decode = (s) => s.replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#0?39;|&#x27;/g, "'").replace(/&#(\d+);/g, (_, n) => String.fromCharCode(Number(n)));
+const VERSION = 2; // bump when extraction changes, so pages are read again
+const UA = 'Mozilla/5.0 (compatible; Corpus/1.0; personal reader)';
+export const isXUrl = (url) => /^https?:\/\/(www\.|mobile\.)?(x|twitter)\.com\//i.test(url || '');
 
-export function readable(html) {
-  const title = decode((html.match(/<meta[^>]+property="og:title"[^>]+content="([^"]*)"/i) || html.match(/<title[^>]*>([\s\S]*?)<\/title>/i) || [])[1] || '').trim();
-  let body = html.replace(/<(script|style|noscript|svg|nav|footer|header|aside|form)[\s\S]*?<\/\1>/gi, ' ').replace(/<!--[\s\S]*?-->/g, ' ');
-  body = (body.match(/<article[\s\S]*?<\/article>/i) || body.match(/<main[\s\S]*?<\/main>/i) || [body])[0];
-  const text = decode(body.replace(/<\/(p|div|h\d|li|pre|blockquote|tr|section)>/gi, '\n').replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]+>/g, ' '))
-    .replace(/[ \t]+/g, ' ').replace(/\n\s*\n+/g, '\n\n').trim();
-  return { title, text };
+async function get(url) {
+  const res = await fetch(url, { redirect: 'follow', signal: AbortSignal.timeout(12000), headers: { 'user-agent': UA, accept: 'text/html,application/xhtml+xml,text/plain;q=0.8' } });
+  const type = res.headers.get('content-type') || '';
+  if (!res.ok || !/html|text\/plain|markdown/.test(type)) return { res, type, body: null };
+  return { res, type, body: (await res.text()).slice(0, 4_000_000) };
 }
 
-export async function fetchPage(url, { maxChars = 24000 } = {}) {
-  if (!url || /^https?:\/\/(www\.)?(x|twitter)\.com\//.test(url)) return null;
+export async function fetchPage(url, { maxChars = 60000 } = {}) {
+  if (!url || isXUrl(url)) return null;
   const file = path.join(dir, `${crypto.createHash('sha1').update(url).digest('hex')}.json`);
-  try { return JSON.parse(await fs.readFile(file, 'utf8')); } catch {}
+  // Pages that couldn't be read are tried again after an hour (the site may have been down).
+  try { const hit = JSON.parse(await fs.readFile(file, 'utf8')); if (hit.v === VERSION && (hit.ok || Date.now() - Date.parse(hit.fetchedAt) < 3600_000)) return hit; } catch {}
   let page;
   try {
-    const res = await fetch(url, { redirect: 'follow', signal: AbortSignal.timeout(9000), headers: { 'user-agent': 'Mozilla/5.0 (compatible; Corpus/1.0; personal reader)', accept: 'text/html,text/plain' } });
-    const type = res.headers.get('content-type') || '';
-    if (!res.ok || !/html|text\/plain|markdown/.test(type)) page = { url, ok: false, status: res.status };
+    let { res, type, body } = await get(url);
+    if (body == null) page = { url, ok: false, status: res.status };
+    else if (!/html/.test(type)) page = { url: res.url, ok: body.length > 200, title: '', text: body.slice(0, maxChars), article: null };
     else {
-      const raw = (await res.text()).slice(0, 3_000_000);
-      const { title, text } = /html/.test(type) ? readable(raw) : { title: '', text: raw };
-      page = { url: res.url, ok: text.length > 200, title, text: text.slice(0, maxChars), fetchedAt: new Date().toISOString() };
+      let article = extractArticle(body, res.url);
+      // App shells (open.substack.com, some news sites) point at the real page as canonical.
+      if (article.words < 100 && article.canonical && article.canonical !== res.url && !isXUrl(article.canonical)) {
+        const again = await get(article.canonical).catch(() => null);
+        if (again?.body && /html/.test(again.type)) { const a2 = extractArticle(again.body, again.res.url); if (a2.words > article.words) { article = a2; res = again.res; } }
+      }
+      const { text, ...rest } = article;
+      page = { url: res.url, ok: text.length > 200, title: article.title || '', text: text.slice(0, maxChars), article: { ...rest, blocks: rest.blocks.slice(0, 600) } };
     }
   } catch (e) { page = { url, ok: false, error: e.name }; }
+  page = { v: VERSION, ...page, fetchedAt: new Date().toISOString() };
   await fs.mkdir(dir, { recursive: true });
   await fs.writeFile(file, JSON.stringify(page));
   return page;

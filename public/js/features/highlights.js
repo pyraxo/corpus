@@ -150,6 +150,8 @@ export async function jumpToHighlight(el, hid) {
     await doc.ready;
     if (h?.loc) { await doc.goTo(h.loc); m = find(); }
   }
+  const linkedBox = !m && el && $('.r-linked', el);
+  if (linkedBox?._ready) { await linkedBox._ready; linkedBox.classList.remove('collapsed'); const more = $('.r-linked-more', linkedBox); if (more) more.hidden = true; m = find(); }
   if (!m) { toast('That passage isn’t in the current text any more'); return; }
   // In a book, wait for its pictures: they change where everything below them is.
   const docHere = el && $('.doc-mount', el)?._doc;

@@ -25,7 +25,8 @@ export const hashOf = (url) => crypto.createHash('sha1').update(mediaKey(url)).d
 // Every image a record shows: its posts' images and video posters, avatar, link card and
 // article images, and the same for the quoted post.
 export function assetsOf(r) {
-  if (r.provider && r.provider !== 'twitter') return [];
+  // Posts, and web pages saved by link (their article's images); files are already local.
+  if (r.provider && r.provider !== 'twitter' && r.provider !== 'web') return [];
   const out = new Map();
   const add = (url, kind) => { if (/^https?:\/\//.test(url || '') && !out.has(mediaKey(url))) out.set(mediaKey(url), { url, kind }); };
   const post = (p) => {

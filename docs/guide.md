@@ -12,7 +12,7 @@ The service worker (`public/sw.js`) caches the app shell, the bookmark index (ne
 
 Press `⌘K` (or `Ctrl K`) for the command palette. It searches bookmarks, jumps to pages, filters by any concept, runs actions, and can send the query straight to Ask. `?` lists every shortcut. The main ones:
 
-- **Anywhere:** `/` search · `g l/i/h/a/t/s` go to Library, Inbox, Highlights, Ask, Taxonomy, Settings · `⇧D` dark mode · `esc` back
+- **Anywhere:** `⇧A` add files or links · `/` search · `g l/i/h/a/t/s` go to Library, Inbox, Highlights, Ask, Taxonomy, Settings · `⇧D` dark mode · `esc` back
 - **Library:** arrow keys or `h j k l` move between cards in wall, grid and list · `⏎`/`o` open · `1 2 3` layout · `x` clear filters
 - **Reader, Read mode:** `j/↓` next · `k/↑` previous · `d` done reading · `s` stack · `m`/`e` keep/archive · `t` tag · `n` scratchpad · `h` highlight the selection · `a` Ask AI · `p` inbox scratchpad · `o` open the original · `i` switch to Triage
 - **Reader, Triage mode (the Inbox):** `⏎` keep · `e` archive · `#` delete · `j/↓` next · `k/↑` previous · `o` open in the dialog · `p` inbox scratchpad · `h` highlight · `r` switch to Read
@@ -83,7 +83,13 @@ To open bookmarks in a dialog over the library instead, set Settings → Library
 
 ## Files, books and PDFs
 
-Drop files anywhere in Corpus, paste them (a screenshot, say), or use **Add files** in the library toolbar or the command palette:
+**Add** in the library toolbar (or `⇧A`, or the command palette) opens the Add dialog: drop files on it or choose them, or paste links. Each item shows its progress and then what it became, with **Open**. Dropping or pasting files or links anywhere in Corpus opens the same dialog.
+
+**Links** are read as articles: the page's title, author, date, site and cover, and its main text as headings, paragraphs, images, lists, quotes and code, without menus, ads or comments. They open in the reader like an X article, are tagged by Jev straight away, and their images are kept in the local archive. A link to a PDF or a book is added as a file instead; posts on X come in through FieldTheory.
+
+**Posts that link to an article** show it under the post in the reader, read the first time you open the post: a screenful, then **Continue reading**. Highlights and notes work in it like anywhere else.
+
+**Files:**
 
 - **Images** (PNG, JPEG, GIF, WebP, AVIF, SVG) are kept as they are. The vision model describes them, Jev tags them from the description, and images named like `IMG_2231` or `Screenshot …` are titled by what they show.
 - **PDFs** open page by page in the reader (drawn by pdf.js, with text you can select and highlight), with their outline as contents and zoom. Their first page becomes the cover.

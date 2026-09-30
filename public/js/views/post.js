@@ -4,7 +4,7 @@ import { $, $$, esc, fmt, num } from '../core/dom.js';
 import { prefs } from '../core/prefs.js';
 import { store, ui } from '../core/state.js';
 import { saveOverride } from '../data/history.js';
-import { KIND_NAME, STACK_MAX, ancestors, facetOf, formatOf, isDoc, isFile, label, minutes, progressOf, readTime, readWhen, stackList, tagIds, tagsOf } from '../data/library.js';
+import { api, KIND_NAME, STACK_MAX, ancestors, facetOf, formatOf, isDoc, isFile, label, minutes, progressOf, readTime, readWhen, stackList, tagIds, tagsOf } from '../data/library.js';
 import { daysLeft } from '../data/query.js';
 import { highlightsOf, highlightsSection, jumpToHighlight, markHighlights, markRoot } from '../features/highlights.js';
 import { archiveStatus, archivedPosters } from '../features/media-archive.js';
@@ -14,6 +14,46 @@ import { inQueue } from './dialog.js';
 import { refreshCards } from './library.js';
 import { paintDock } from './reader/index.js';
 import { mountDoc } from '../features/doc-reader.js';
+
+// "By Ethan Mollick · One Useful Thing · March 3, 2026 · 12 min read · Open ↗"
+function articleByline(a, url, { open = true } = {}) {
+  const words = (a.blocks || []).reduce((n, b) => n + (b.text ? b.text.split(/\s+/).length : 0), 0);
+  const bits = [a.byline && `By ${esc(a.byline)}`, esc(a.siteName || a.site || host(url)), a.published && fullDate(a.published), words > 80 && `${readTime(Math.max(1, Math.round(words / 230)))} read`].filter(Boolean);
+  return `<p class="r-byline">${bits.join(' · ')}${open ? ` · <a href="${esc(url)}" target="_blank" rel="noopener noreferrer">Open ↗</a>` : ''}</p>`;
+}
+
+// A post that links out to a page (not X, not a native X article): that page may be an article.
+const linksOut = (r) => r.provider === 'twitter' && !r.article && !!(r.card?.url || r.links?.length) && !/^https?:\/\/(www\.)?(x|twitter)\.com\//.test(r.card?.url || r.links[0]);
+const linked = new Map(); // bookmark id -> the server's answer, fetched once per session
+const openLinked = new Set(); // articles you've expanded, kept open across repaints
+// Fetch the linked article (the server reads and caches it) and show it under the post, a
+// screenful at first; highlights made in it are found again, like any in the post.
+export function loadLinked(el, r) {
+  const box = $(`.r-linked[data-linked="${CSS.escape(r.id)}"]`, el);
+  if (!box) return;
+  if (!linked.has(r.id)) linked.set(r.id, api(`/api/linked/${r.id}`).catch(() => null));
+  box._ready = (async () => {
+    const slow = setTimeout(() => { if (box.isConnected && !box.firstChild) { box.hidden = false; box.innerHTML = '<p class="r-linked-loading">Reading the linked article…</p>'; } }, 250);
+    const res = await linked.get(r.id);
+    clearTimeout(slow);
+    if (!box.isConnected) return;
+    if (!res?.ok) { box.remove(); return; }
+    const a = res.article;
+    box.hidden = false;
+    box.innerHTML = `<div class="r-linked-head"><span class="kicker">The linked article</span><h2 class="r-linked-title">${esc(a.title || res.url)}</h2>${articleByline(a, res.url)}</div>
+      <div class="r-text r-article r-linked-body" data-bm="${esc(r.id)}" data-loc="link">${a.cover ? `<img class="r-cover" src="${esc(a.cover)}" alt="" loading="lazy" referrerpolicy="no-referrer">` : ''}${articleBlocks(a.blocks)}</div>
+      <button class="r-linked-more" data-linked-more>Continue reading</button>`;
+    // The post's own link card says the same thing, less; the article replaces it.
+    for (const c of $$('.r-text .r-card', el)) if (c.getAttribute('href') === (r.card?.url || res.url)) c.remove();
+    const body = $('.r-linked-body', box);
+    markRoot(body, r);
+    const long = body.scrollHeight > 1100;
+    const keepOpen = openLinked.has(r.id) || highlightsOf(r.id).some(h => h.loc?.part === 'link');
+    box.classList.toggle('collapsed', long && !keepOpen);
+    $('.r-linked-more', box).hidden = !long || keepOpen;
+    $('.r-linked-more', box).addEventListener('click', () => { openLinked.add(r.id); box.classList.remove('collapsed'); $('.r-linked-more', box).hidden = true; });
+  })();
+}
 
 // docked: the inbox pins tags and the scratchpad in a bar below the post instead.
 export function readerContent(r, { docked = false } = {}) {
@@ -40,18 +80,20 @@ export function readerContent(r, { docked = false } = {}) {
   return `
     <header class="r-head">${byline(r, false)}<div class="r-meta"><span>${fullDate(r.postedAt)}</span>${formatBadge(r)}${isFile(r) ? `<a href="${esc(r.url)}" target="_blank" rel="noopener" download="${esc(r.doc.name)}">Original file ↓</a>` : `<a href="${esc(r.url)}" target="_blank" rel="noopener noreferrer">Open ${r.provider === 'twitter' ? 'on X' : esc(host(r.url))} ↗</a>`}</div>
       ${readerMarks(r, { docked })}
-      ${title ? `<h1 class="r-title">${esc(title)}</h1>` : ''}</header>
+      ${title ? `<h1 class="r-title">${esc(title)}</h1>` : ''}
+      ${r.provider === 'web' && r.article ? articleByline(r.article, r.url, { open: false }) : ''}</header>
     <div class="r-text" data-bm="${esc(r.id)}">
       ${postBody(r)}
       ${quoted}
       ${pending ? `<p class="r-pending" data-pending="${r.id}">Capturing the full ${f === 'format:article' ? 'article' : 'thread'} from X…</p>` : ''}
     </div>
+    ${linksOut(r) ? `<section class="r-linked" data-linked="${esc(r.id)}" hidden></section>` : ''}
     <footer class="r-foot">
       ${readerActions(r)}
       ${highlightsSection(r)}
       ${docked ? '' : `<div class="r-section"><h4>Tags</h4><div class="tag-editor" data-tags="${r.id}">${tagEditor(r)}</div></div>
       <div class="r-section"><h4>Scratchpad</h4><textarea class="scratchpad" data-scratchpad="${r.id}" rows="3" placeholder="Why you saved this, what to try, questions it raises. Agents can write here too.">${esc(o.scratchpad || '')}</textarea></div>`}
-      ${isFile(r) ? fileStats(r) : `<div class="r-stats"><span>${fmt.format(r.engagement.likeCount || 0)} likes</span><span>${fmt.format(r.engagement.repostCount || 0)} reposts</span><span>${fmt.format(r.engagement.bookmarkCount || 0)} saves</span><span class="r-archive" data-archive-status="${r.id}"></span></div>`}
+      ${isFile(r) ? fileStats(r) : r.provider === 'web' ? `<div class="r-stats"><span>${esc(r.article?.site || host(r.url))}</span><span>Saved ${fullDate(r.capturedAt)}</span></div>` : `<div class="r-stats"><span>${fmt.format(r.engagement.likeCount || 0)} likes</span><span>${fmt.format(r.engagement.repostCount || 0)} reposts</span><span>${fmt.format(r.engagement.bookmarkCount || 0)} saves</span><span class="r-archive" data-archive-status="${r.id}"></span></div>`}
     </footer>`;
 }
 const fileStats = (r) => `<div class="r-stats"><span>${esc(r.doc.name)}</span><span>${bytes(r.doc.size)}</span><span>Added ${fullDate(r.postedAt)}</span></div>`;
@@ -144,6 +186,7 @@ function articleBlocks(blocks = []) {
     else if (b.type === 'divider') html += '<hr>';
     else if (b.type === 'code') html += `<pre><code>${esc(b.text)}</code></pre>`;
     else if (b.type === 'quote') html += `<blockquote>${esc(b.text)}</blockquote>`;
+    else if (b.type === 'caption') html += `<p class="r-figcap">${esc(b.text)}</p>`;
     else if (/^h\d$/.test(b.type)) html += `<${b.type}>${esc(b.text)}</${b.type}>`;
     else html += `<p>${esc(b.text).replace(/\n/g, '<br>')}</p>`;
   }
@@ -185,6 +228,7 @@ export function afterPaint(el, r) {
   if (!el) return;
   requestAnimationFrame(() => fitScratchpads(el));
   markHighlights(el, r);
+  loadLinked(el, r);
   archivedPosters(el);
   archiveStatus(r);
   const mount = $('.doc-mount', el);
