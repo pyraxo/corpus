@@ -104,3 +104,23 @@
 .key-rec { display: inline-flex; align-items: center; gap: 2px; min-height: 30px; padding: 3px 10px; border-radius: 8px; border: 1px dashed var(--accent); color: var(--accent-ink); font: 12px var(--mono); animation: pulse 0.9s infinite alternate; }
 .key-rec kbd { margin: 0; }
 .s-lede kbd { margin: 0 1px; }
+/* Settings: a short line under each name, and the rest in a tooltip on the ⓘ beside it. */
+.s-name { display: flex; align-items: center; gap: 5px; }
+.s-hint { position: relative; display: inline-flex; }
+.s-hint-btn { width: 20px; height: 20px; display: grid; place-items: center; border-radius: 50%; color: var(--ink-3); }
+.s-hint-btn svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; }
+.s-hint-btn:hover, .s-hint-btn:focus-visible, .s-hint:focus-within .s-hint-btn { color: var(--ink); background: var(--sunk); outline: 0; }
+.s-tip { position: absolute; z-index: 20; top: calc(100% + 8px); left: -10px; width: max-content; max-width: min(320px, calc(100vw - 40px)); padding: 10px 12px; border-radius: 10px; background: var(--ink); color: var(--bg); font-size: 12.5px; font-weight: 400; line-height: 1.5; text-align: left; white-space: normal; box-shadow: var(--shadow); opacity: 0; visibility: hidden; transform: translateY(-3px); transition: opacity 0.12s, transform 0.12s, visibility 0s 0.12s; pointer-events: none; }
+.s-tip::before { content: ''; position: absolute; top: -5px; left: 15px; width: 10px; height: 10px; background: inherit; transform: rotate(45deg); border-radius: 2px; }
+/* Hover waits a moment (so passing over doesn't flash it); focus and tap show it at once. */
+.s-hint:hover .s-tip { transition-delay: 0.18s, 0.18s, 0s; }
+.s-hint:hover .s-tip, .s-hint:focus-within .s-tip { opacity: 1; visibility: visible; transform: none; pointer-events: auto; }
+.s-tip code { background: color-mix(in srgb, var(--bg) 16%, transparent); color: inherit; }
+.s-tip a { color: inherit; text-decoration: underline; text-underline-offset: 2px; }
+@media (max-width: 860px) {
+  /* On a phone the tooltip spans the row, from its left edge, so it never runs off the screen. */
+  .s-row > div:first-child { position: relative; align-self: stretch; }
+  .s-hint { position: static; }
+  .s-tip { left: 0; right: 0; top: 30px; width: auto; max-width: none; }
+  .s-tip::before { display: none; }
+}

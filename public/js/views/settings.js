@@ -22,6 +22,14 @@ function settingsSection() {
   const s = location.pathname.split('/')[2];
   return SETTINGS_SECTIONS.some(([id]) => id === s) ? s : 'appearance';
 }
+// The ⓘ beside a setting's name: a button (focusable, tappable) whose explanation shows as a
+// tooltip on hover or focus.
+let hintN = 0;
+function hint(title, help) {
+  const id = `tip-${++hintN}`;
+  return `<span class="s-hint"><button type="button" class="s-hint-btn" aria-label="About ${esc(String(title).replace(/<[^>]+>/g, ''))}" aria-describedby="${id}"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.25"/><path d="M8 7.3v4M8 4.8v.2"/></svg></button><span class="s-tip" role="tooltip" id="${id}">${help}</span></span>`;
+}
+
 export function renderSettings() {
   const section = settingsSection();
   const s = store.status;
@@ -29,7 +37,8 @@ export function renderSettings() {
   const enriched = store.records.filter(r => r.enrichment !== 'pending').length;
   const threads = store.records.filter(r => r.thread).length;
   const seg = (key, options) => `<div class="segmented">${options.map(([v, l]) => `<button data-pref="${key}" data-value="${v}" aria-pressed="${String(prefs[key]) === String(v)}">${l}</button>`).join('')}</div>`;
-  const row = (title, desc, control) => `<div class="s-row"><div><strong>${title}</strong>${desc ? `<p>${desc}</p>` : ''}</div><div class="s-control">${control}</div></div>`;
+  // A row: its title with an ⓘ explaining it (help), a short line or live status (desc), and its control.
+  const row = (title, desc, control, help = '') => `<div class="s-row"><div><div class="s-name"><strong>${title}</strong>${help ? hint(title, help) : ''}</div>${desc ? `<p>${desc}</p>` : ''}</div><div class="s-control">${control}</div></div>`;
   const toggle = (key, on, attr = 'data-pref-toggle') => `<button class="switch" ${attr}="${key}" role="switch" aria-checked="${on}"><span></span></button>`;
   const group = (title, rows) => `<section class="s-group">${title ? `<h4>${title}</h4>` : ''}${rows}</section>`;
   const backfillChip = (st) => {
@@ -38,7 +47,7 @@ export function renderSettings() {
     const pending = Math.max(0, store.records.length - (st?.build?.classified || 0));
     return pending > 0 ? `<span class="pill">${num.format(pending)} to classify</span>` : '<span class="pill ok">Up to date</span>';
   };
-  const keyRow = (name, title, desc, status) => {
+  const keyRow = (name, title, desc, status, help) => {
     const st = status?.[name] || { set: false, source: 'none', last4: null };
     const editing = ui.keyEdit === name;
     const result = keyTestResult[name];
@@ -46,37 +55,37 @@ export function renderSettings() {
       ? `<form class="key-edit" data-key-form="${name}"><input class="field mono" type="password" name="value" placeholder="Paste new key" autocomplete="off" autofocus><button class="ghost small" type="submit">Save</button><button class="ghost small" type="button" data-key-cancel="${name}">Cancel</button></form>`
       : `<div class="key-edit"><span class="mono small">${st.set ? `•••• ${esc(st.last4)}${st.source === 'env' ? ' (.env)' : ''}` : 'Not set'}</span><button class="ghost small" data-key-edit="${name}">${st.set ? 'Change' : 'Set'}</button>${st.set ? `<button class="ghost small" data-key-test="${name}">Test</button>` : ''}${st.source === 'saved' ? `<button class="ghost small danger" data-key-clear="${name}">Clear</button>` : ''}</div>`;
     const msg = !editing && result ? `<p class="small ${result.ok ? '' : 'warn'}">${result.ok ? '✓ Key works' : esc(result.error)}</p>` : '';
-    return row(title, desc + msg, control);
+    return row(title, desc + msg, control, help);
   };
 
   const bodies = {
     appearance: () => group('', `
       ${row('Theme', '', seg('theme', [['system', 'System'], ['light', 'Light'], ['dark', 'Dark']]))}
-      ${row('Density', 'Comfortable gives each inbox entry three lines with room around them. Compact fits two lines per entry and tightens the library’s cards.', seg('density', [['comfortable', 'Comfortable'], ['compact', 'Compact']]))}
-      ${row('Reader text', 'Size of text in the reader and chat answers.', seg('readerSize', [['s', 'Small'], ['m', 'Medium'], ['l', 'Large']]))}
-      ${row('Show sensitive media', 'Posts flagged as sensitive by X.', toggle('showSensitive', prefs.showSensitive))}`),
+      ${row('Density', 'Space around cards and inbox entries.', seg('density', [['comfortable', 'Comfortable'], ['compact', 'Compact']]), 'Comfortable gives each inbox entry three lines with room around them. Compact fits two lines per entry and tightens the library’s cards.')}
+      ${row('Reader text', 'Text size for reading.', seg('readerSize', [['s', 'Small'], ['m', 'Medium'], ['l', 'Large']]), 'For posts, articles and books in the reader, and for answers in chat.')}
+      ${row('Show sensitive media', 'Posts X flags as sensitive.', toggle('showSensitive', prefs.showSensitive), 'When off, the images and video in those posts are hidden; their text still shows.')}`),
     library: () => group('Library', `
-      ${row('Layout', 'How bookmarks are drawn in the library.', seg('layout', [['wall', 'Wall'], ['grid', 'Grid'], ['list', 'List']]))}
-      ${row('Open bookmarks in', 'The reader keeps a list beside the post and your tags, scratchpad and actions below it, like the inbox. You go through the list you opened from. The dialog opens over the library instead.', seg('openIn', [['reader', 'Reader'], ['dialog', 'Dialog']]))}
+      ${row('Layout', 'How the library is drawn.', seg('layout', [['wall', 'Wall'], ['grid', 'Grid'], ['list', 'List']]), 'Wall: columns of cards shaped by what’s in them. Grid: even cards. List: one row each, with a thumbnail. 1, 2 and 3 switch between them in the library.')}
+      ${row('Open bookmarks in', 'The reader, or a dialog over the library.', seg('openIn', [['reader', 'Reader'], ['dialog', 'Dialog']]), 'The reader keeps a list beside the post and your tags, scratchpad and actions below it, like the inbox, and you go through the list you opened from. The dialog opens over the library instead.')}
       ${row('Default order', '', `<select id="settings-sort" aria-label="Default order">${SORTS.map(([v, l]) => `<option value="${v}" ${prefs.sort === v ? 'selected' : ''}>${l}</option>`).join('')}</select>`)}`) +
       group('Inbox', `
-      ${row('Clear the backlog', 'Mark every untriaged bookmark older than 30 days as kept.', '<button class="ghost" data-backlog>Mark as kept</button>')}
-      ${row('Untriaged', `${num.format(inboxBase().length)} bookmarks waiting. Sort and filter them from the Inbox.`, '<a class="ghost" href="/inbox" data-link>Open inbox</a>')}`),
+      ${row('Clear the backlog', 'Keep everything older than 30 days.', '<button class="ghost" data-backlog>Mark as kept</button>', 'Marks every untriaged bookmark older than 30 days as kept, so the inbox holds only recent ones. You can undo it right after.')}
+      ${row('Untriaged', `${num.format(inboxBase().length)} bookmarks waiting.`, '<a class="ghost" href="/inbox" data-link>Open inbox</a>')}`),
     sources: () => group('Sources', `
-      ${row('FieldTheory', `${esc(s?.source?.path || '—')}<br>Updated ${s?.source?.modifiedAt ? `${relDate(s.source.modifiedAt)} ago` : '—'} · Index built ${store.generatedAt ? `${relDate(store.generatedAt)} ago` : '—'} · ${num.format(store.records.length)} bookmarks`, '<button class="ghost" data-refresh>Rebuild now</button>')}
-      ${row('Thread unrolling', e?.available ? `${num.format(enriched)} of ${num.format(store.records.length)} captured · ${num.format(threads)} threads unrolled${e.queued ? ` · ${num.format(e.queued)} queued` : ''}${e.yieldingTo ? ' · paused while the backfill script runs' : ''}${e.waitingUntil ? ` · rate-limited until ${new Date(e.waitingUntil).toLocaleTimeString()}` : ''}${e.lastError ? `<br><span class="warn">${esc(e.lastError)}</span>` : ''}` : 'X session cookies not found. Threads and articles can’t be expanded.', e?.available ? toggle('enrich', e.enabled, 'data-server-toggle') : '')}
-      ${row('Local archive', `${s?.archive ? `${num.format(s.archive.saved)} images and avatars saved (${bytesFmt(s.archive.bytes)})${s.archive.queued ? ` · ${num.format(s.archive.queued)} downloading` : ''}${s.archive.gone ? ` · ${num.format(s.archive.gone)} were already gone from X` : ''}<br>` : ''}Local copies of every post’s images (video isn’t kept, only its poster frame), shown when X no longer serves them. FieldTheory keeps the post text; captured threads, articles and quoted posts are in <code>data/enrich/</code>.${s?.archive?.lastError && s.archive.retrying ? `<br><span class="warn">${esc(s.archive.lastError)}</span>` : ''}`, s?.archive ? toggle('archive', s.archive.enabled, 'data-server-toggle') : '')}
-      ${row('Your files', `${num.format(store.records.filter(isFile).length)} files added: ${['image', 'pdf', 'epub', 'mobi', 'text'].map(k => [k, store.records.filter(r => r.doc?.kind === k).length]).filter(([, n]) => n).map(([k, n]) => `${num.format(n)} ${KIND_NAME[k]}`).join(', ') || 'none yet'}. Drop images, PDFs, EPUB or MOBI books, or text and Markdown files anywhere in Corpus, paste them, or use <strong>Add files</strong>. Jev tags each one and suggests new topics.`, '<button class="ghost" data-add-files>Add files</button>')}
-      ${row('Saved web pages', `${num.format(store.records.filter(r => r.provider === 'web').length)} pages saved by URL (via Ask or MCP <code>create_bookmark</code>).`, '')}`) +
+      ${row('FieldTheory', `Updated ${s?.source?.modifiedAt ? `${relDate(s.source.modifiedAt)} ago` : '—'} · ${num.format(store.records.length)} bookmarks`, '<button class="ghost" data-refresh>Rebuild now</button>', `Corpus reads FieldTheory’s export at <code>${esc(s?.source?.path || '—')}</code> and never writes to it. It checks for changes daily; Rebuild now reads it again. The index was built ${store.generatedAt ? `${relDate(store.generatedAt)} ago` : '—'}.`)}
+      ${row('Thread unrolling', e?.available ? `${num.format(enriched)} of ${num.format(store.records.length)} captured · ${num.format(threads)} threads${e.queued ? ` · ${num.format(e.queued)} queued` : ''}${e.yieldingTo ? ' · paused while the backfill runs' : ''}${e.waitingUntil ? ` · rate-limited until ${new Date(e.waitingUntil).toLocaleTimeString()}` : ''}${e.lastError ? `<br><span class="warn">${esc(e.lastError)}</span>` : ''}` : 'X session cookies not found.', e?.available ? toggle('enrich', e.enabled, 'data-server-toggle') : '', 'Fetches each bookmark’s whole thread, X article, link card and quoted post from X, within X’s rate limit, with the session FieldTheory uses. Opening an uncaptured bookmark moves it to the front. Off pauses it.')}
+      ${row('Local archive', `${s?.archive ? `${num.format(s.archive.saved)} images saved (${bytesFmt(s.archive.bytes)})${s.archive.queued ? ` · ${num.format(s.archive.queued)} downloading` : ''}${s.archive.gone ? ` · ${num.format(s.archive.gone)} already gone from X` : ''}` : 'Local copies of post images.'}${s?.archive?.lastError && s.archive.retrying ? `<br><span class="warn">${esc(s.archive.lastError)}</span>` : ''}`, s?.archive ? toggle('archive', s.archive.enabled, 'data-server-toggle') : '', 'Keeps a copy of every post’s images, avatars and link-card images (video only as its poster frame), and of saved articles’ images, and shows it when the original is gone. FieldTheory keeps the post text; captured threads, articles and quoted posts are in <code>data/enrich/</code>.')}
+      ${row('Your files', `${num.format(store.records.filter(isFile).length)} added${store.records.some(isFile) ? `: ${['image', 'pdf', 'epub', 'mobi', 'text'].map(k => [k, store.records.filter(r => r.doc?.kind === k).length]).filter(([, n]) => n).map(([k, n]) => `${num.format(n)} ${KIND_NAME[k]}`).join(', ')}` : ''}.`, '<button class="ghost" data-add-files>Add</button>', 'Images, PDFs, EPUB and MOBI books, text and Markdown. Drop or paste them anywhere, or use Add (Shift+A). Jev tags each one and suggests new topics.')}
+      ${row('Saved web pages', `${num.format(store.records.filter(r => r.provider === 'web').length)} saved by link.`, '', 'From the Add dialog, Ask, or an agent (<code>create_bookmark</code>). Each page is read as an article: its title, author, date and text.')}`) +
       group('Classification', `
-      ${keyRow('TYPESAFE_API_KEY', 'TypeSafe Jev key', 'Classifies bookmarks from full thread content.', s?.keys)}
-      ${row('Status', `${num.format(s?.build?.classified || 0)} of ${num.format(store.records.length)} classified${s?.backfill?.running ? ` · ${num.format(s.backfill.pending)} threads left to capture` : ''}${!s?.classifiers?.typesafe ? ' · set a key above to enable' : ''}`, `<div class="key-edit">${backfillChip(s)}<button class="ghost small" data-backfill ${s?.backfill?.running || !s?.classifiers?.typesafe ? 'disabled' : ''}>${s?.backfill?.running ? 'Running…' : 'Reverify'}</button></div>`)}
-      ${row('Keyword rules', 'Concept keywords from the taxonomy.', '<a class="ghost" href="/taxonomy" data-link>Open taxonomy</a>')}
-      ${row('FieldTheory categories', 'Domains and categories from FieldTheory’s classifier.', '<span class="mono small">on</span>')}`),
+      ${keyRow('TYPESAFE_API_KEY', 'TypeSafe Jev key', 'Tags your bookmarks.', s?.keys, 'Jev reads each bookmark’s whole content (thread, article, file, image descriptions), picks its topics and kinds, and judges new topics to suggest. The key is kept on the server.')}
+      ${row('Status', `${num.format(s?.build?.classified || 0)} of ${num.format(store.records.length)} classified${s?.backfill?.running ? ` · ${num.format(s.backfill.pending)} threads left to capture` : ''}${!s?.classifiers?.typesafe ? ' · set a key above to enable' : ''}`, `<div class="key-edit">${backfillChip(s)}<button class="ghost small" data-backfill ${s?.backfill?.running || !s?.classifiers?.typesafe ? 'disabled' : ''}>${s?.backfill?.running ? 'Running…' : 'Reverify'}</button></div>`, 'Reverify runs the backfill: it captures whatever is missing from X, then classifies anything new or changed since Jev last read it.')}
+      ${row('Keyword rules', 'Keywords from the taxonomy.', '<a class="ghost" href="/taxonomy" data-link>Open taxonomy</a>', 'A bookmark that mentions a concept’s keywords gets that tag too, as a weaker signal than Jev’s reading. Edit the keywords in the taxonomy.')}
+      ${row('FieldTheory categories', 'FieldTheory’s own categories.', '<span class="mono small">on</span>', 'Domains and categories from FieldTheory’s classifier, mapped onto your taxonomy as another weak signal.')}`),
     chat: () => group('OpenRouter', `
-      ${keyRow('OPENROUTER_API_KEY', 'OpenRouter key', 'Powers Chat and Ask.', s?.keys)}
-      ${row('Default model', 'Used when you don’t pick one in the message composer.', `<select id="settings-model" aria-label="Default model">${chatModels().map(m => `<option value="${esc(m.id)}" ${(prefs.chatModel || chatModels()[0]?.id) === m.id ? 'selected' : ''}>${esc(m.label)}</option>`).join('')}</select>`)}
-      ${row('Tools', 'The assistant can search and read bookmarks, tag and triage them, read and write scratchpads, see your highlights, save web pages, edit the taxonomy and skills, and run Jev. It asks before deleting or bulk changes.', '<a class="ghost" href="/ask" data-link>Open Ask</a>')}`) +
+      ${keyRow('OPENROUTER_API_KEY', 'OpenRouter key', 'Powers Ask and chat.', s?.keys, 'It also describes images for Jev, which reads only text, and proposes new topics for files. The key is kept on the server.')}
+      ${row('Default model', 'For new messages.', `<select id="settings-model" aria-label="Default model">${chatModels().map(m => `<option value="${esc(m.id)}" ${(prefs.chatModel || chatModels()[0]?.id) === m.id ? 'selected' : ''}>${esc(m.label)}</option>`).join('')}</select>`, 'Used when you don’t pick a model in the message box.')}
+      ${row('Tools', 'What the assistant can do.', '<a class="ghost" href="/ask" data-link>Open Ask</a>', 'It can search and read bookmarks, books and PDFs, tag, triage and edit them, read and write scratchpads, see your highlights, save links, edit the taxonomy and skills, and run Jev. It asks before deleting or changing many at once.')}`) +
       group('Available models', `<p class="muted small" style="margin:0 0 4px">Turn models off to keep them out of the picker. At least one must stay on.</p>` +
       (s?.chat?.allModels || []).map(m => row(esc(m.label), esc(m.note), toggle(m.id, m.enabled, 'data-model-toggle'))).join('')),
     skills: () => skillsManager(),
@@ -87,14 +96,14 @@ export function renderSettings() {
         return row(esc(l), '', `<div class="key-edit">${rec ? `<span class="key-rec">${recordingKey.first ? capsOf(recordingKey.first) + ' …' : 'Press keys…'}</span>` : `<button class="key-btn" data-rec="${id}" title="Change">${keyHint(id)}</button>`}${custom && !rec ? `<button class="ghost small" data-key-reset="${id}" title="Default: ${esc(def.join(' / '))}">Reset</button>` : ''}</div>`);
       }).join(''))).join('') + group('', row('Reset all shortcuts', 'Restore every default.', `<button class="ghost" data-keys-reset ${prefs.keys && Object.keys(prefs.keys).length ? '' : 'disabled'}>Reset all</button>`)),
     account: () => group('This device', installRow(row)) +
-      group('Access', row('Password', s?.passwordProtected ? 'Corpus is behind a password. Sessions last 30 days per device.' : 'Not protected. Set CORPUS_PASSWORD_HASH on the server.', s?.passwordProtected ? '<button class="ghost" data-logout>Sign out</button>' : '')) +
+      group('Access', row('Password', s?.passwordProtected ? 'Signed in for 30 days per device.' : 'Not protected.', s?.passwordProtected ? '<button class="ghost" data-logout>Sign out</button>' : '', s?.passwordProtected ? 'The whole site is behind one password; only its hash is kept, on the server. Signing in lasts 30 days on each device.' : 'Set CORPUS_PASSWORD_HASH on the server to put Corpus behind a password.')) +
       group('Data', `
-      ${row('Export', 'Bookmarks with your tags, scratchpads, highlights and triage state, plus the inbox scratchpad.', '<button class="ghost" data-export>Download JSON</button>')}
-      ${row('Reset this device', 'Clears layout and appearance preferences here. Your tags, scratchpads and highlights are kept.', '<button class="ghost danger" data-reset-prefs>Reset</button>')}`) +
+      ${row('Export', 'Everything, as one JSON file.', '<button class="ghost" data-export>Download JSON</button>', 'Bookmarks with your tags, scratchpads, highlights and notes, and triage state, plus the inbox scratchpad.')}
+      ${row('Reset this device', 'Preferences on this device.', '<button class="ghost danger" data-reset-prefs>Reset</button>', 'Clears this device’s layout, appearance and shortcut preferences. Your tags, scratchpads and highlights are kept.')}`) +
       group('Agents & MCP', `
-      ${row('Connect an agent', 'Paste this prompt into Claude Code, Hermes, Cursor, Codex or any MCP-capable agent. It includes your URL and token, and points the agent to <a href="/connect.md" target="_blank">/connect.md</a> for setup.', `<button class="primary" data-copy-mcp="prompt">Copy setup prompt</button>`)}
-      ${row('MCP endpoint', 'Streamable HTTP. Every Corpus capability as tools; skills as prompts.', `<button class="ghost" data-copy-mcp="url">Copy URL</button>`)}
-      ${row('Token', 'Sent as <code>Authorization: Bearer …</code>. Stored on the server as CORPUS_MCP_TOKEN.', `<button class="ghost" data-copy-mcp="token">Copy token</button>`)}`)
+      ${row('Connect an agent', 'A setup prompt for any MCP agent.', `<button class="primary" data-copy-mcp="prompt">Copy setup prompt</button>`, 'Paste it into Claude Code, Hermes, Cursor, Codex or any agent that speaks MCP. It includes your URL and token, and points the agent to <a href="/connect.md" target="_blank">/connect.md</a> for the rest.')}
+      ${row('MCP endpoint', 'Where agents connect.', `<button class="ghost" data-copy-mcp="url">Copy URL</button>`, 'Streamable HTTP. Everything Corpus can do, as tools; your skills, as prompts.')}
+      ${row('Token', 'The agent’s password.', `<button class="ghost" data-copy-mcp="token">Copy token</button>`, 'Agents send it as <code>Authorization: Bearer …</code>. It’s set on the server as CORPUS_MCP_TOKEN.')}`)
   };
   const title = SETTINGS_SECTIONS.find(([id]) => id === section)[1];
   view().className = 'view settings';
