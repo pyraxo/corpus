@@ -1,7 +1,7 @@
 // Corpus service worker: installable app shell, offline reading, fast repeat loads.
 // Never caches the API, chat, MCP or the sign-in page.
-const VERSION = 'corpus-v35';
-const SHELL = ['/', '/app.js?v=33', '/dropdown.js?v=20', '/styles.css?v=33', '/manifest.webmanifest', '/icons/icon-192.png', '/icons/apple-touch-icon.png'];
+const VERSION = 'corpus-v36';
+const SHELL = ['/', '/app.js?v=34', '/doc-reader.js?v=34', '/dropdown.js?v=20', '/styles.css?v=34', '/manifest.webmanifest', '/icons/icon-192.png', '/icons/apple-touch-icon.png'];
 const SHELL_CACHE = `${VERSION}-shell`, DATA_CACHE = 'corpus-data', MEDIA_CACHE = 'corpus-media';
 const MEDIA_MAX = 400;
 // A stalled request must never wedge install or leave the app blank on a bad connection.
@@ -75,6 +75,9 @@ self.addEventListener('fetch', (event) => {
   }
   // The bookmark index: network first so it's current, cached for offline reading.
   if (same && url.pathname.startsWith('/data/')) { event.respondWith(networkFirst(req, DATA_CACHE)); return; }
+  // Files you added: originals can be large and are read in ranges, so they're left to the network;
+  // chapters, covers and book images are kept, so a book you've opened reads offline.
+  if (same && url.pathname.startsWith('/files/')) { if (!/\/original\.[a-z0-9]+$/.test(url.pathname)) event.respondWith(networkFirst(req, DATA_CACHE)); return; }
   // App code and styles are versioned by query string.
   if (same) { event.respondWith(staleWhileRevalidate(req, SHELL_CACHE)); return; }
   // Fonts and tweet media.

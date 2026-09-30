@@ -858,3 +858,165 @@ mark.hl.flash { animation: hl-flash 1.6s ease-out; }
 }
 .side-panel .tc-head { gap: 8px; }
 .side-add { height: 24px; padding: 0 8px; font-size: 11.5px; }
+
+/* ── files: books, PDFs, text and images you added ─────── */
+.add-files svg { width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; }
+.avatar.file { border-radius: 3px; object-fit: cover; }
+.avatar.blank.file { border-radius: 4px; background: var(--ink); color: var(--bg); font: 600 9px var(--mono); }
+.tile-cover { display: grid; place-items: center; padding: 18px 18px 4px; background: var(--sunk); }
+.tile-cover img { max-height: 280px; width: auto; max-width: 100%; border-radius: 3px 6px 6px 3px; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12), 0 8px 22px rgba(0, 0, 0, 0.14); }
+.doc-tile h3 { margin: 6px 0 2px; }
+.doc-tile .doc-by { margin: 0 0 6px; color: var(--ink-3); font-size: 12.5px; }
+.tile-progress { display: block; height: 3px; margin: 10px 0 2px; border-radius: 999px; background: var(--rule); overflow: hidden; }
+.tile-progress i { display: block; height: 100%; width: calc(var(--p) * 100%); background: var(--accent); border-radius: inherit; }
+.progress-mark { display: inline-flex; align-items: center; gap: 5px; flex: none; font: 10px var(--mono); color: var(--ink-3); }
+.progress-mark i { width: 22px; height: 3px; border-radius: 999px; background: linear-gradient(90deg, var(--accent) calc(var(--p) * 100%), var(--rule) 0); }
+.tile-foot .progress-mark { margin-left: auto; }
+.tile-foot .read-mark + .progress-mark { margin-left: 0; }
+.r-caption { margin: -6px 0 16px; font: 13px/1.5 var(--sans); color: var(--ink-3); }
+
+/* A book's title page */
+.doc-head { gap: 14px; }
+.doc-card { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 22px; align-items: start; }
+.doc-cover { width: 132px; border-radius: 3px 7px 7px 3px; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12), 0 10px 28px rgba(0, 0, 0, 0.16); background: var(--sunk); }
+.doc-cover.blank { aspect-ratio: 2 / 3; display: grid; place-items: center; font: 500 12px var(--mono); color: var(--ink-3); border: 1px solid var(--rule-2); box-shadow: none; }
+.doc-info { display: grid; gap: 6px; min-width: 0; }
+.doc-info .r-title { margin: 0; font-size: clamp(28px, 4vw, 40px); }
+.doc-authors { margin: 0; font: italic 400 20px/1.3 var(--serif); color: var(--ink-2); }
+.doc-facts { display: flex; flex-wrap: wrap; gap: 4px 18px; margin: 6px 0 0; font-size: 12px; }
+.doc-facts div { display: grid; gap: 1px; }
+.doc-facts dt { font: 500 9.5px var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-3); }
+.doc-facts dd { margin: 0; color: var(--ink-2); }
+.doc-progress-line { display: flex; align-items: center; gap: 10px; }
+.doc-progress-line .tile-progress { flex: 1; max-width: 220px; margin: 0; }
+.doc-desc { margin: 0; font: 15px/1.6 var(--read); color: var(--ink-2); display: -webkit-box; -webkit-line-clamp: 6; -webkit-box-orient: vertical; overflow: hidden; }
+.doc-subjects { display: flex; flex-wrap: wrap; gap: 6px; }
+
+/* The document: a bar with contents, where you are and how far; then chapters or pages */
+.doc-mount { position: relative; margin-top: 8px; }
+.doc-bar { position: sticky; top: 0; z-index: 3; display: flex; align-items: center; gap: 8px; padding: 8px 0; background: color-mix(in srgb, var(--bg) 92%, transparent); backdrop-filter: blur(10px); border-bottom: 1px solid var(--rule); }
+.reader-sheet .doc-bar { top: 53px; }
+.doc-btn { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border-radius: 7px; font-size: 12.5px; font-weight: 500; color: var(--ink-2); }
+.doc-btn:hover, .doc-btn[aria-expanded='true'] { background: var(--sunk); color: var(--ink); }
+.doc-btn svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; }
+.doc-btn.icon { width: 28px; padding: 0; justify-content: center; font-size: 16px; }
+.doc-where { flex: 1; min-width: 0; font: 11px var(--mono); color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.doc-zoom, .doc-steps { display: inline-flex; align-items: center; gap: 2px; flex: none; }
+.doc-zoom-v { font: 10.5px var(--mono); color: var(--ink-3); min-width: 38px; text-align: center; }
+.doc-progress { position: absolute; left: 0; right: 0; bottom: -1px; height: 2px; }
+.doc-progress i { display: block; height: 100%; width: 0; background: var(--accent); transition: width 0.2s; }
+.doc-panel { position: absolute; z-index: 4; top: calc(100% + 6px); left: 0; width: min(420px, 100%); max-height: min(60vh, 560px); overflow-y: auto; padding: 10px; background: var(--surface); border: 1px solid var(--rule-2); border-radius: 12px; box-shadow: var(--shadow); }
+.doc-tabs { margin-bottom: 8px; }
+.doc-toc, .doc-notes { list-style: none; margin: 0; padding: 0; display: grid; gap: 1px; }
+.doc-toc button { width: 100%; display: flex; gap: 10px; justify-content: space-between; padding: 6px 8px 6px calc(8px + var(--level, 0) * 14px); border-radius: 6px; text-align: left; font-size: 13px; color: var(--ink-2); }
+.doc-toc button:hover { background: var(--sunk); color: var(--ink); }
+.doc-toc li.on button { background: var(--sunk); color: var(--ink); font-weight: 500; box-shadow: inset 2px 0 0 var(--accent); }
+.doc-toc .n { font: 10.5px var(--mono); color: var(--ink-3); flex: none; }
+.doc-notes button { width: 100%; display: grid; gap: 3px; padding: 8px; border-radius: 6px; text-align: left; font-size: 13px; }
+.doc-notes button:hover { background: var(--sunk); }
+.doc-notes .where { font: 10px var(--mono); color: var(--ink-3); text-transform: uppercase; letter-spacing: 0.04em; }
+.doc-notes q { quotes: none; color: var(--ink-2); padding-left: 8px; border-left: 2px solid var(--accent); }
+.doc-notes .note { color: var(--ink); font-size: 12.5px; }
+.doc-empty { padding: 8px; margin: 0; }
+.doc-loading { font: 12px var(--mono); color: var(--ink-3); padding: 40px 0; text-align: center; }
+.doc-body { padding-top: 20px; }
+.doc-chapter img { max-width: 100%; height: auto; margin: 1em auto; border-radius: 4px; }
+.doc-chapter h1, .doc-chapter h2, .doc-chapter h3, .doc-chapter h4 { font: 400 1.5em/1.2 var(--serif); margin: 1.4em 0 0.5em; text-wrap: balance; }
+.doc-chapter h1 { font-size: 2em; }
+.doc-chapter h3, .doc-chapter h4 { font-size: 1.25em; }
+.doc-chapter blockquote { margin: 1em 0; padding-left: 16px; border-left: 2px solid var(--rule-2); color: var(--ink-2); }
+.doc-chapter pre { font: 13px/1.5 var(--mono); background: var(--sunk); padding: 14px; border-radius: 8px; overflow-x: auto; white-space: pre-wrap; }
+.doc-chapter table { border-collapse: collapse; font-size: 0.85em; margin: 1em 0; }
+.doc-chapter td, .doc-chapter th { border: 1px solid var(--rule-2); padding: 4px 8px; }
+.doc-chapter ul, .doc-chapter ol { padding-left: 1.3em; }
+.doc-chapter a[data-ch] { text-decoration-style: dotted; }
+.doc-chapter sup a { text-decoration: none; color: var(--accent-ink); }
+.doc-foot { display: flex; justify-content: space-between; gap: 12px; margin: 28px 0 8px; padding-top: 16px; border-top: 1px solid var(--rule); }
+.doc-foot:empty { display: none; }
+.doc-next { display: grid; gap: 3px; max-width: 48%; padding: 10px 14px; border: 1px solid var(--rule-2); border-radius: 10px; text-align: right; font-size: 13.5px; margin-left: auto; }
+.doc-next.prev { text-align: left; margin-left: 0; margin-right: auto; }
+.doc-next:hover { border-color: var(--ink-3); }
+.doc-end { align-self: center; }
+
+/* PDF pages: drawn on canvas, with pdf.js's invisible text layer on top for selecting and highlighting */
+.reader-body.inline.has-doc:has(.doc-mount.pdf) { max-width: 880px; }
+.pdf .doc-body { display: grid; gap: 14px; justify-items: center; }
+.pdf-page { position: relative; background: #fff; box-shadow: 0 0 0 1px var(--rule), 0 4px 18px rgba(0, 0, 0, 0.06); border-radius: 2px; overflow: hidden; max-width: none; }
+.pdf-page canvas { display: block; }
+.pdf-page:not(.done) { background: linear-gradient(var(--sunk), var(--sunk)); }
+.pdf-n { position: absolute; right: 8px; bottom: 6px; font: 10px var(--mono); color: rgba(0, 0, 0, 0.35); pointer-events: none; }
+[data-theme='dark'] .pdf-page canvas { filter: none; }
+/* From pdf.js's viewer stylesheet: each span is sized from --font-height and stretched (--scale-x) to sit exactly over the drawn text. */
+.textLayer { color-scheme: only light; position: absolute; text-align: initial; inset: 0; overflow: clip; opacity: 1; line-height: 1; letter-spacing: normal; word-spacing: normal; text-size-adjust: none; -webkit-text-size-adjust: none; forced-color-adjust: none; transform-origin: 0 0; caret-color: CanvasText; z-index: 0; --min-font-size: 1; --text-scale-factor: calc(var(--total-scale-factor) * var(--min-font-size)); --min-font-size-inv: calc(1 / var(--min-font-size)); }
+.textLayer :is(span, br) { color: transparent; position: absolute; white-space: pre; cursor: text; transform-origin: 0% 0%; user-select: text; }
+.textLayer > :not(.markedContent), .textLayer .markedContent span:not(.markedContent) { z-index: 1; --font-height: 0; font-size: calc(var(--text-scale-factor) * var(--font-height)); --scale-x: 1; --rotate: 0deg; transform: rotate(var(--rotate)) scaleX(var(--scale-x)) scale(var(--min-font-size-inv)); }
+.textLayer .markedContent { display: contents; }
+.textLayer span[role='img'] { user-select: none; cursor: default; }
+.textLayer ::selection { background: color-mix(in srgb, #2f6bff 30%, transparent); color: transparent; }
+.textLayer br::selection { background: transparent; }
+.textLayer .endOfContent { display: block; position: absolute; inset: 100% 0 0; z-index: 0; cursor: default; user-select: none; }
+.textLayer.selecting .endOfContent { top: 0; }
+.textLayer mark.hl { color: transparent; background: color-mix(in srgb, var(--accent) 38%, transparent); padding: 0; border-radius: 1px; }
+
+/* Notes on highlights */
+mark.hl.has-note { box-shadow: inset 0 -2px 0 color-mix(in srgb, var(--accent-ink) 70%, transparent); }
+.hl-pop { flex-wrap: wrap; max-width: min(420px, calc(100vw - 16px)); }
+.hl-pop-note { flex-basis: 100%; margin: 4px 8px 6px; color: var(--bg); font-size: 12.5px; line-height: 1.45; opacity: 0.9; white-space: pre-wrap; }
+.hl-pop[data-kind='note'] { background: var(--surface); border: 1px solid var(--rule-2); padding: 10px; width: min(380px, calc(100vw - 16px)); }
+.hl-note { display: grid; gap: 8px; width: 100%; }
+.hl-note-q { margin: 0; padding-left: 8px; border-left: 2px solid var(--accent); font-size: 12px; color: var(--ink-3); line-height: 1.4; }
+.hl-note textarea { width: 100%; resize: vertical; border: 1px solid var(--rule-2); border-radius: 8px; background: var(--bg); padding: 8px 10px; font-size: 13.5px; line-height: 1.5; outline: 0; }
+.hl-note textarea:focus { border-color: var(--ink-3); }
+.hl-note-bar { display: flex; align-items: center; gap: 6px; justify-content: flex-end; }
+.hl-note-bar .muted { margin-right: auto; }
+.hl-pop[data-kind='note'] button { color: var(--ink-2); height: 28px; }
+.hl-pop[data-kind='note'] button:hover { background: var(--sunk); }
+.hl-pop[data-kind='note'] button.primary { background: var(--ink); color: var(--bg); padding: 0 14px; }
+.hl-list .hl-body { flex: 1; min-width: 0; display: grid; gap: 4px; }
+.hl-list .hl-quote { width: 100%; }
+.hl-where { display: block; font: 10px var(--mono); letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-3); margin-bottom: 2px; }
+.hl-src .hl-where { display: inline; margin: 0; flex: none; }
+.hl-note-text { margin: 0 0 0 12px; font-size: 12.5px; line-height: 1.45; color: var(--ink); white-space: pre-wrap; }
+.hl-note-text::before { content: '✎ '; color: var(--ink-3); }
+.hl-actions { display: flex; flex: none; gap: 2px; }
+.hl-list .x[data-hl-note-edit] { font-size: 12px; }
+.hl-card-note { margin: -4px 0 12px 16px; font-size: 13.5px; line-height: 1.5; white-space: pre-wrap; }
+.hl-card-note::before { content: '✎ '; color: var(--ink-3); }
+
+/* Jev's suggested new topics, beside the tags */
+.suggested { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.sug-label { font: 500 9.5px var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent-ink); margin-left: 4px; }
+.sug { display: inline-flex; align-items: center; height: 26px; border: 1px dashed var(--accent); border-radius: 999px; overflow: hidden; }
+.sug button { height: 100%; padding: 0 4px 0 10px; font-size: 12px; color: var(--ink-2); display: inline-flex; align-items: center; gap: 5px; }
+.sug button:hover { color: var(--ink); background: color-mix(in srgb, var(--accent) 12%, transparent); }
+.sug .sug-in { font: 9.5px var(--mono); color: var(--ink-3); }
+.sug .sug-x { padding: 0 8px 0 4px; color: var(--ink-3); font-size: 14px; }
+.triage-dock .suggested { flex: none; flex-wrap: nowrap; }
+
+/* The reader view: Read / Triage */
+.mode-toggle { justify-self: start; }
+.queue-head .mode-toggle button { height: 24px; }
+.read-from { color: var(--ink-2); }
+.inbox-empty-actions { display: flex; gap: 10px; align-items: center; justify-content: center; }
+.triage-bar button[disabled] { opacity: 0.45; cursor: default; }
+
+/* Dropping files anywhere */
+.drop-zone { position: fixed; inset: 0; z-index: 90; display: grid; place-items: center; padding: 24px; background: color-mix(in srgb, var(--bg) 70%, transparent); backdrop-filter: blur(6px); pointer-events: none; }
+.drop-box { display: grid; gap: 6px; place-items: center; text-align: center; width: min(560px, 100%); padding: 56px 28px; border: 2px dashed var(--accent); border-radius: 20px; background: var(--surface); box-shadow: var(--shadow); }
+.drop-box .serif { margin: 0; font-size: 34px; }
+.drop-box .muted { margin: 0; max-width: 40ch; }
+
+@media (max-width: 860px) {
+  .doc-card { grid-template-columns: 88px minmax(0, 1fr); gap: 14px; }
+  .doc-cover { width: 88px; }
+  .doc-bar { top: var(--head); }
+  .reader-sheet .doc-bar { top: 53px; }
+  .doc-panel { right: 0; width: auto; }
+  .read-these { display: none; }
+  .add-files { padding: 0 9px; flex: none; }
+  .add-files span { display: none; }
+  /* Read mode's dock has more to do than triage's: two rows of four, Done reading twice as wide. */
+  .reading .triage-bar { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .reading .triage-bar [data-mark-read] { grid-column: span 2; }
+  .doc-next { max-width: 100%; }
+}

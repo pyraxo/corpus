@@ -9,7 +9,7 @@
   "scripts": {
     "start": "node --no-warnings server.mjs",
     "build:data": "node --no-warnings scripts/build-data.mjs",
-    "check": "for f in server.mjs lib/*.mjs scripts/*.mjs public/app.js; do node --check $f || exit 1; done",
+    "check": "for f in server.mjs lib/*.mjs scripts/*.mjs public/app.js public/doc-reader.js public/sw.js; do node --check $f || exit 1; done",
     "backfill": "node --no-warnings scripts/backfill.mjs"
   }
 }

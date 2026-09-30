@@ -33,7 +33,7 @@ const [checkH, checkM] = (process.env.SOURCE_CHECK_UTC || '23:30').split(':').ma
 const defaultIds = new Set(defaultConcepts().map(c => c.id));
 const log = (m) => console.log(`${new Date().toISOString()} ${m}`);
 
-const mime = { ...FILE_TYPES, ...MEDIA_TYPES, '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.json': 'application/json; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon', '.webmanifest': 'application/manifest+json' };
+const mime = { ...FILE_TYPES, ...MEDIA_TYPES, '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8', '.wasm': 'application/wasm', '.css': 'text/css; charset=utf-8', '.json': 'application/json; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon', '.webmanifest': 'application/manifest+json' };
 
 let lastBuild = null;
 let building = null;
@@ -63,7 +63,8 @@ async function classifyNew(result) {
   classifying = true;
   try {
     const ready = [];
-    for (const r of result.records) if (ready.length < 50 && await needsClassification(r)) ready.push(r);
+    // Files just added are tagged by their upload (with suggested topics); don't race it.
+    for (const r of result.records) if (ready.length < 50 && !ops.isTagging(r.id) && await needsClassification(r)) ready.push(r);
     if (!ready.length) return;
     const res = await classifyMany(ready, result.concepts, { concurrency: 4, log });
     log(`[jev] classified ${res.ok} new bookmark(s)`);

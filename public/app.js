@@ -1,5 +1,6 @@
 import './dropdown.js?v=20';
-// Corpus — library, inbox, taxonomy and settings over the built bookmark index.
+import { mountDoc, locKey, parseLoc, pdfCover } from './doc-reader.js?v=34';
+// Corpus — library, reader and inbox, taxonomy and settings over the built bookmark index.
 
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
@@ -8,7 +9,7 @@ const fmt = new Intl.NumberFormat('en', { notation: 'compact', maximumFractionDi
 const num = new Intl.NumberFormat('en');
 const PAGE = 60;
 
-const defaults = { theme: 'system', layout: 'wall', density: 'comfortable', sort: 'bookmarked', readerSize: 'm', showSensitive: false, inboxWindow: 'all', inboxSort: 'bookmarked', inboxFormat: 'all', inboxTopic: '' };
+const defaults = { theme: 'system', layout: 'wall', density: 'comfortable', sort: 'bookmarked', readerSize: 'm', showSensitive: false, inboxWindow: 'all', inboxSort: 'bookmarked', inboxFormat: 'all', inboxTopic: '', openIn: 'reader' };
 const prefStorage = (() => { try { const k = '__corpus'; localStorage.setItem(k, '1'); localStorage.removeItem(k); return localStorage; } catch { const m = new Map(); return { getItem: (k) => m.get(k) ?? null, setItem: (k, v) => m.set(k, String(v)), removeItem: (k) => m.delete(k) }; } })();
 const prefs = { ...defaults, ...safeJSON(prefStorage.getItem('corpus.prefs')) };
 function safeJSON(s) { try { return JSON.parse(s) || {}; } catch { return {}; } }
@@ -24,7 +25,7 @@ const store = {
   records: [], byId: new Map(), concepts: [], conceptById: new Map(), children: new Map(), facets: [],
   overrides: {}, settings: {}, status: null, generatedAt: null, tagCache: new Map(), hay: new Map()
 };
-const ui = { inboxPad: false, view: 'library', query: '', filters: new Set(), status: 'active', visible: PAGE, readerList: [], readerId: null, inboxId: null, taxFacet: 'topic', taxSelected: null, taxQuery: '', railOpen: new Set(), mobileRail: false };
+const ui = { inboxPad: false, view: 'library', query: '', filters: new Set(), status: 'active', visible: PAGE, readerList: [], readerId: null, inboxId: null, readList: [], readFrom: null, taxFacet: 'topic', taxSelected: null, taxQuery: '', railOpen: new Set(), mobileRail: false };
 
 // ── data ────────────────────────────────────────────────────────────────
 async function api(path, { method = 'GET', body } = {}) {
@@ -93,12 +94,25 @@ const stackList = () => stackAll().slice(-STACK_MAX);
 // Media-only posts have no text to title them by.
 const titleOf = (r, n) => r.article?.title || r.title || snippet(r, n) || r.card?.title || `${label(formatOf(r))} from @${r.author.handle}`;
 const minutes = (r) => Math.max(1, Math.round(readLen(r) / 1100));
+const readTime = (m) => m >= 90 ? `${Math.round(m / 60)} h` : `${m} min`;
+
+// Files you added (images, PDFs, books, text) have a document instead of an author on X.
+const isFile = (r) => r.provider === 'file';
+const isDoc = (r) => isFile(r) && r.doc?.kind !== 'image';
+const KIND_NAME = { pdf: 'PDF', epub: 'EPUB', mobi: 'MOBI', text: 'Text', image: 'Image' };
+// What stands in for "@handle": the file's type and size.
+function fileLine(r) {
+  const d = r.doc || {};
+  return [KIND_NAME[d.kind], d.pages ? `${num.format(d.pages)} pages` : d.chapters > 1 ? `${d.chapters} chapters` : '', d.width && d.height ? `${d.width}×${d.height}` : ''].filter(Boolean).join(' · ');
+}
+const who = (r) => isFile(r) ? (r.author.name || fileLine(r)) : `@${r.author.handle}`;
+const progressOf = (r) => store.overrides[r.id]?.progress || 0;
 const readWhen = (iso) => { const d = relDate(iso); return d === 'now' ? 'just now' : /^\d+[mhd]$/.test(d) ? `${d} ago` : d; };
 
 function haystack(r) {
   let h = store.hay.get(r.id);
   if (h) return h;
-  h = [r.title, r.text, r.author.name, r.author.handle, ...(r.thread || []).map(t => t.text), r.article?.title, ...(r.article?.blocks || []).slice(0, 60).map(b => b.text || ''), r.card?.title, r.card?.description, r.card?.domain, r.quoted?.text, ...(r.quoted?.thread || []).map(t => t.text), r.quoted?.article?.title, ...(r.quoted?.article?.blocks || []).slice(0, 60).map(b => b.text || ''),...tagIds(r).map(label), store.overrides[r.id]?.scratchpad, ...(store.overrides[r.id]?.highlights || []).map(h => h.quote || h.text)].filter(Boolean).join(' ').toLowerCase();
+  h = [r.title, r.text, r.author.name, r.author.handle, ...(r.thread || []).map(t => t.text), r.article?.title, ...(r.article?.blocks || []).slice(0, 60).map(b => b.text || ''), r.card?.title, r.card?.description, r.card?.domain, r.quoted?.text, ...(r.quoted?.thread || []).map(t => t.text), r.quoted?.article?.title, ...(r.quoted?.article?.blocks || []).slice(0, 60).map(b => b.text || ''),...tagIds(r).map(label), store.overrides[r.id]?.scratchpad, ...(store.overrides[r.id]?.highlights || []).flatMap(h => [h.quote || h.text, h.note]), r.doc?.name, r.doc?.description, ...(r.doc?.subjects || []), r.doc?.publisher, r.doc?.excerpt, ...(r.media || []).map(m => m.description)].filter(Boolean).join(' ').toLowerCase();
   store.hay.set(r.id, h);
   return h;
 }
@@ -136,13 +150,15 @@ function statusOk(r, status) {
 }
 
 const SORTS = [['bookmarked', 'Recently saved'], ['oldest', 'Oldest saved'], ['posted', 'Newest posted'], ['posted-old', 'Oldest posted'], ['saves', 'Most saved'], ['likes', 'Most liked'], ['longest', 'Longest reads'], ['shortest', 'Quickest reads'], ['read', 'Recently read'], ['random', 'Random']];
-const FORMAT_TABS = [['all', 'All'], ['format:thread', 'Threads'], ['format:article', 'Articles'], ['format:link', 'Links'], ['format:repo', 'Repos'], ['format:video', 'Video'], ['format:image', 'Images'], ['format:quote', 'Quotes'], ['format:post', 'Posts']];
+const FORMAT_TABS = [['all', 'All'], ['format:thread', 'Threads'], ['format:article', 'Articles'], ['format:link', 'Links'], ['format:repo', 'Repos'], ['format:video', 'Video'], ['format:image', 'Images'], ['format:quote', 'Quotes'], ['format:post', 'Posts'], ['format:book', 'Books'], ['format:document', 'Documents'], ['format:note', 'Notes']];
 const WINDOWS = [['all', 'Any time'], ['7d', 'Last 7 days'], ['30d', 'Last 30 days'], ['90d', 'Last 90 days'], ['older', 'Older than 30 days']];
 
 // Rough reading length in characters: whole thread, article body, or the post.
 function readLen(r) {
   if (r._len != null) return r._len;
-  let n = r.thread ? r.thread.reduce((s, t) => s + (t.text?.length || 0), 0) : (r.text?.length || 0);
+  // A book or PDF: its word count, at about six characters a word.
+  if (r.doc?.words) return (r._len = r.doc.words * 6);
+  let n =r.thread ? r.thread.reduce((s, t) => s + (t.text?.length || 0), 0) : (r.text?.length || 0);
   if (r.article) n += r.article.blocks.reduce((s, b) => s + (b.text?.length || 0), 0);
   // A fully captured quoted thread or article is part of the read.
   const q = r.quoted;
@@ -248,7 +264,8 @@ function afterHistory(e, undone) {
     // Undoing a triage brings that bookmark back to the front of the queue.
     if (undone && e.ids.length === 1 && store.byId.has(e.ids[0])) ui.inboxId = e.ids[0];
     renderInbox();
-  } else if (ui.view === 'library' && !readerOpen) refreshCards();
+  } else if (ui.view === 'read' && !readerOpen) repaintBookmark(ui.inboxId);
+  else if (ui.view === 'library' && !readerOpen) refreshCards();
   if (readerOpen && ui.readerId) { const r = store.byId.get(ui.readerId); if (r) paintReader($('#reader-body'), r); }
 }
 
@@ -312,6 +329,8 @@ function tagPills(r, n = 3) {
 }
 
 function visual(r) {
+  // A book's or PDF's cover stands like a book: taller than wide.
+  if (r.doc?.cover && r.doc.kind !== 'image') return { url: r.doc.cover, w: 2, h: 3, cover: true };
   const m = r.media?.[0];
   if (m && (!r.sensitive || prefs.showSensitive)) return { url: img(m.url), w: m.width, h: m.height, video: m.type === 'video' || m.type === 'gif', count: r.media.length };
   if (r.article?.cover) return { url: r.article.cover, w: 5, h: 2 };
@@ -325,17 +344,23 @@ function mediaTile(v, cls = '') {
   return `<div class="tile-media ${cls}" style="--ratio:${ratio}"><img src="${esc(v.url)}" alt="" loading="lazy" referrerpolicy="no-referrer">${v.video ? '<span class="media-flag">▶</span>' : v.count > 1 ? `<span class="media-flag">${v.count}</span>` : ''}</div>`;
 }
 
+// A file's "avatar": its cover, small, or the kind of file.
+const avatarOf = (r) => isFile(r) ? fileAvatar(r) : avatar(r.author);
+const fileAvatar = (r) => r.doc?.cover ? `<img class="avatar file" src="${esc(r.doc.cover)}" alt="" loading="lazy">` : `<span class="avatar blank file">${esc((KIND_NAME[r.doc?.kind] || 'F')[0])}</span>`;
 function byline(r, withDate = true) {
+  if (isFile(r)) return `<div class="byline">${fileAvatar(r)}${r.author.name ? `<span class="name">${esc(r.author.name)}</span>` : ''}<span class="handle">${esc(fileLine(r))}</span>${withDate ? `<span class="date">${relDate(r.postedAt)}</span>` : ''}</div>`;
   return `<div class="byline">${avatar(r.author)}<span class="name">${esc(r.author.name)}</span><span class="handle">@${esc(r.author.handle)}</span>${withDate ? `<span class="date">${relDate(r.postedAt)}</span>` : ''}</div>`;
 }
 
+// How far into a book or PDF you are.
+const progressMark = (r) => { const p = isDoc(r) ? progressOf(r) : 0; return p > 0.005 && !isRead(r) ? `<span class="progress-mark" title="${Math.round(p * 100)}% read"><i style="--p:${p}"></i>${Math.round(p * 100)}%</span>` : ''; };
 const readMark = (r) => isRead(r) ? `<span class="read-mark" title="Read ${esc(fullDate(store.overrides[r.id].readAt))}"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m3.5 8.4 2.8 2.8 6.2-6.4"/></svg>Read</span>` : '';
 
 function listItem(r) {
   const v = visual(r);
   return `<article class="row" data-open="${r.id}" tabindex="0">
     <div class="row-main">${byline(r)}<h3>${esc(r.title || snippet(r, 90))}</h3><p class="row-snippet">${esc(snippet(r, 240, { afterTitle: true }))}</p>
-    <div class="meta">${formatBadge(r)}${daysLeft(r) != null ? `<span class="pill trash-pill">${daysLeft(r)}d left</span>` : ''}${tagPills(r)}${triage(r) ? `<span class="state">${triage(r)}</span>` : ''}${readMark(r)}${hlMark(r)}</div></div>
+    <div class="meta">${formatBadge(r)}${daysLeft(r) != null ? `<span class="pill trash-pill">${daysLeft(r)}d left</span>` : ''}${tagPills(r)}${triage(r) ? `<span class="state">${triage(r)}</span>` : ''}${readMark(r)}${progressMark(r)}${hlMark(r)}</div></div>
     ${v ? `<div class="row-thumb"><img src="${esc(v.url)}" alt="" loading="lazy" referrerpolicy="no-referrer"></div>` : ''}
   </article>`;
 }
@@ -345,7 +370,7 @@ function gridItem(r) {
   return `<article class="card" data-open="${r.id}" tabindex="0">
     ${v ? mediaTile({ ...v, w: 16, h: 10 }, 'fixed') : `<div class="card-type">${esc(snippet(r, 160))}</div>`}
     <div class="card-body">${byline(r)}<h3>${esc(r.title || snippet(r, 90))}</h3>${v ? `<p class="card-snippet">${esc(snippet(r, 140, { afterTitle: true }))}</p>` : ''}
-    <div class="meta">${formatBadge(r)}${tagPills(r)}${readMark(r)}${hlMark(r)}</div></div>
+    <div class="meta">${formatBadge(r)}${tagPills(r)}${readMark(r)}${progressMark(r)}${hlMark(r)}</div></div>
   </article>`;
 }
 
@@ -355,7 +380,12 @@ function wallItem(r) {
   const f = formatOf(r);
   const text = plain(r.text);
   let body;
-  if (f === 'format:article' && !r.article) body = `<div class="tile-pad"><span class="kicker">Article</span><p class="lead">${esc(text || 'Long-form post on X')}</p><p class="muted small">Not captured yet — open to capture it now.</p></div>`;
+  if (isDoc(r)) {
+    // Books and documents: the cover, then title and author, like a spine you can pick up.
+    const d = r.doc;
+    const kick = [label(f), d.pages ? `${num.format(d.pages)} pages` : '', readTime(minutes(r))].filter(Boolean).join(' · ');
+    body = `${v ? `<div class="tile-cover"><img src="${esc(v.url)}" alt="" loading="lazy"></div>` : ''}<div class="tile-pad doc-tile"><span class="kicker">${esc(kick)}</span><h3 class="serif">${esc(r.title)}</h3>${d.authors?.length ? `<p class="doc-by">${esc(d.authors.join(', '))}</p>` : ''}${!v && (d.description || d.excerpt) ? `<p>${esc(snippet({ text: d.description || d.excerpt }, 220))}</p>` : ''}${progressOf(r) > 0.005 ? `<span class="tile-progress"><i style="--p:${progressOf(r)}"></i></span>` : ''}</div>`;
+  } else if (f === 'format:article' && !r.article) body = `<div class="tile-pad"><span class="kicker">Article</span><p class="lead">${esc(text || 'Long-form post on X')}</p><p class="muted small">Not captured yet — open to capture it now.</p></div>`;
   else if (f === 'format:article' && r.article) body = `${v ? mediaTile(v) : ''}<div class="tile-pad"><span class="kicker">Article</span><h3 class="serif">${esc(r.article.title)}</h3><p>${esc(snippet(r, 200))}</p></div>`;
   else if (f === 'format:thread' && r.thread) body = `<div class="tile-pad"><span class="kicker">Thread · ${r.thread.length}</span><p class="lead">${esc(text.length > 300 ? `${text.slice(0, 300).replace(/\s+\S*$/, '')}…` : text)}</p><ol class="thread-peek">${r.thread.slice(r.focalIndex + 1, r.focalIndex + 3).map(t => `<li>${esc(plain(t.text).slice(0, 110))}${plain(t.text).length > 110 ? '…' : ''}</li>`).join('')}</ol></div>${v ? mediaTile(v) : ''}`;
   else if (!v && text.length && text.length <= 180 && f !== 'format:link' && f !== 'format:repo') body = `<div class="tile-pad quote"><p class="serif big">${esc(text)}</p></div>`;
@@ -363,12 +393,13 @@ function wallItem(r) {
   else body = `${v ? mediaTile(v) : ''}${text ? `<div class="tile-pad"><p>${esc(text.length > 420 ? `${text.slice(0, 420).replace(/\s+\S*$/, '')}…` : text)}</p></div>` : ''}`;
   const left = daysLeft(r);
   const pills = (left != null ? `<span class="pill trash-pill">${left}d left</span>` : '') + tagPills(r);
-  return `<article class="tile" data-open="${r.id}" tabindex="0">${body}${pills ? `<div class="tile-tags">${pills}</div>` : ''}<footer class="tile-foot">${byline(r, false)}${readMark(r)}${hlMark(r)}<span class="date">${relDate(r.postedAt)}</span></footer></article>`;
+  return `<article class="tile" data-open="${r.id}" tabindex="0">${body}${pills ? `<div class="tile-tags">${pills}</div>` : ''}<footer class="tile-foot">${byline(r, false)}${readMark(r)}${progressMark(r)}${hlMark(r)}<span class="date">${relDate(r.postedAt)}</span></footer></article>`;
 }
 
 function estimateHeight(r, colWidth) {
   const v = visual(r); const f = formatOf(r); const t = plain(r.text).length;
   let h = 86;
+  if (isDoc(r)) return h + (v ? 300 : 120) + 70;
   if (v) h += colWidth * (v.w && v.h ? Math.max(0.56, Math.min(1.6, v.h / v.w)) : 0.66);
   if (f === 'format:thread') h += 160 + Math.min(300, t) * 0.5;
   else if (!v && t <= 180) h += 40 + t * 0.9;
@@ -397,6 +428,8 @@ function renderLibrary() {
           ${ui.status === 'deleted' ? `<span class="muted small">Deleted for good after ${TRASH_DAYS} days</span>` : ''}
         </div>
         <div class="toolbar-right">
+          <button class="ghost add-files" data-add-files title="Add images, PDFs, books or text. You can also drop or paste them anywhere."><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3v10M3 8h10"/></svg><span>Add files</span></button>
+          ${results.length ? `<button class="ghost read-these" data-read-all title="Go through these one by one in the reader">Read these</button>` : ''}
           <button class="ghost rail-toggle" data-rail aria-expanded="${ui.mobileRail}"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 4h11M4.5 8h7M6.5 12h3"/></svg>Filter${ui.filters.size ? `<span class="badge">${ui.filters.size}</span>` : ''}</button>
           <select id="sort" aria-label="Sort">${SORTS.map(([v, l]) => `<option value="${v}" ${prefs.sort === v ? 'selected' : ''}>${l}</option>`).join('')}</select>
           <div class="segmented" role="group" aria-label="Layout">${[['wall', 'Wall'], ['grid', 'Grid'], ['list', 'List']].map(([v, l]) => `<button data-layout="${v}" aria-pressed="${prefs.layout === v}">${l}</button>`).join('')}</div>
@@ -549,7 +582,7 @@ const queueRowHtml = (r, top, currentId) => {
   const title = (r.title || snippet(r, 80)).slice(0, 90);
   // Omit the title line entirely when there's no text yet (pending capture) — an empty span
   // still reserves its line's height in the fixed-height row, leaving an ugly gap.
-  return `<li class="${r.id === currentId ? 'on' : ''}" style="top:${top}px" data-pick="${r.id}"><span class="q-author"><span class="q-name">${esc(r.author.name)}</span><span class="q-date">${relDate(r.postedAt)}</span></span>${title ? `<span class="q-title">${esc(title)}</span>` : ''}<span class="q-meta">${label(formatOf(r))}${r.thread ? ` · ${r.thread.length}` : ''}</span></li>`;
+  return `<li class="${r.id === currentId ? 'on' : ''}" style="top:${top}px" data-pick="${r.id}"><span class="q-author"><span class="q-name">${esc(isFile(r) ? r.author.name || fileLine(r) : r.author.name)}</span><span class="q-date">${relDate(r.postedAt)}</span></span>${title ? `<span class="q-title">${esc(title)}</span>` : ''}<span class="q-meta">${label(formatOf(r))}${r.thread ? ` · ${r.thread.length}` : ''}${isDoc(r) && progressOf(r) > 0.005 ? ` · ${Math.round(progressOf(r) * 100)}%` : ''}${isRead(r) ? ' · read' : ''}</span></li>`;
 };
 
 function renderQueueRows() {
@@ -576,42 +609,70 @@ function ensureQueueVisible(id) {
   renderQueueRows();
 }
 
-function renderInbox() {
-  const base = inboxBase();
-  const queue = inboxQueue();
-  ui.inboxQueue = queue;
-  if (!queue.find(r => r.id === ui.inboxId)) ui.inboxId = queue[0]?.id || null;
-  const current = store.byId.get(ui.inboxId);
-  view().className = 'view inbox';
-  if (!base.length && prefs.inboxWindow === 'all') { view().innerHTML = `<div class="inbox-empty"><p class="serif big">Inbox zero.</p><p class="muted">New bookmarks from FieldTheory land here.</p><button class="ghost" data-inbox-pad aria-pressed="${!!ui.inboxPad}">Inbox scratchpad</button>${ui.inboxPad ? inboxPadHtml() : ''}</div>`; if (ui.inboxPad && (!pad.loaded || Date.now() - pad.fetchedAt > 10_000)) loadPad(); return; }
-  const idx = current ? queue.indexOf(current) : -1;
-  const head = `<div class="queue-head"><div class="queue-count"><span class="count">${num.format(queue.length)}</span><span class="muted">to triage${queue.length !== base.length ? ` · ${num.format(base.length)} in window` : ''}</span></div><div class="queue-links"><a href="/archive" data-link>Archive <span>${num.format(store.records.filter(x => statusOk(x, 'archived')).length)}</span></a><a href="/trash" data-link>Trash <span>${num.format(store.records.filter(x => statusOk(x, 'deleted')).length)}</span></a><button class="link" data-inbox-pad aria-pressed="${!!ui.inboxPad}">Scratchpad</button></div>${inboxControls(base)}</div>`;
-  const prevScroll = $('.queue')?.scrollTop || 0;
-  const list = current ? `<ol id="queue-list" style="height:${queue.length * QUEUE_ROW_H}px"></ol>` : '';
-  const main = current ? `
-      <div class="triage-main">
-      <div class="triage-scroll"><div class="reader-body inline" id="triage-body">${readerContent(current, { docked: true })}</div></div>
-      <div class="triage-dock">
-      <div class="dock-meta">
-        <div class="tag-editor" data-tags="${current.id}">${tagEditor(current)}</div>
-        <textarea class="scratchpad" data-scratchpad="${current.id}" rows="1" placeholder="Scratchpad — why you saved this, what to do with it">${esc(store.overrides[current.id]?.scratchpad || '')}</textarea>
-      </div>
-      <div class="triage-bar">
+// ── the reader: the inbox's layout, in two modes ─────────────────────────
+// Triage (/inbox): the untriaged queue; keep, archive or delete each one and move on.
+// Read (/read/<id>): the list you opened a bookmark from; read, tag, highlight and annotate,
+// mark it read or stack it, then go to the next. Both share the queue, dock and sidebar.
+const readQueue = () => ui.readList.map(id => store.byId.get(id)).filter(r => r && !store.overrides[r.id]?.purged);
+function modeToggle(reading) {
+  return `<div class="segmented mode-toggle" role="group" aria-label="Mode"><button data-mode="read" aria-pressed="${reading}" title="Read through the list (${esc(capsText('read.mode.read'))})">Read</button><button data-mode="triage" aria-pressed="${!reading}" title="Keep, archive or delete (${esc(capsText('read.mode.triage'))})">Triage</button></div>`;
+}
+function dockBar(current, reading, idx, total) {
+  const o = store.overrides[current.id] || {};
+  if (!reading) return `<div class="triage-bar">
         <button class="primary" data-triage="kept">Keep ${keyHint('inbox.keep')}</button>
         <button class="ghost" data-triage="archived">Archive ${keyHint('inbox.archive')}</button>
         <button class="ghost" data-skip>Skip ${keyHint('inbox.next')}</button>
         <button class="ghost danger" data-triage="deleted">Delete ${keyHint('inbox.delete')}</button>
         <button class="ghost ask-ai" data-inbox-ask aria-pressed="${!!ui.inboxChat}">Ask AI ${keyHint('inbox.ask')}</button>
         <button class="ghost ask-ai" data-inbox-pad aria-pressed="${!!ui.inboxPad}">Scratchpad ${keyHint('inbox.pad')}</button>
-        <span class="muted small">${idx + 1} of ${num.format(queue.length)}</span>
+        <span class="muted small">${idx + 1} of ${num.format(total)}</span>
+      </div>`;
+  if (o.deleted) return `<div class="triage-bar"><button class="primary" data-read-restore>Restore</button><span class="muted small">In Trash · deleted for good in ${daysLeft(current)} days</span><button class="ghost" data-read-step="1">Next ${keyHint('read.next')}</button><span class="muted small">${idx + 1} of ${num.format(total)}</span></div>`;
+  const t = o.triaged;
+  return `<div class="triage-bar">
+        <button class="${o.read ? 'ghost' : 'primary'}" data-mark-read="${current.id}" aria-pressed="${!!o.read}">${o.read ? `Read ${readWhen(o.readAt)}` : 'Done reading'} ${keyHint('read.done')}</button>
+        <button class="ghost" data-stack="${current.id}" aria-pressed="${!!o.stackedAt}">${o.stackedAt ? 'On the stack' : 'Stack'} ${keyHint('read.stack')}</button>
+        <button class="ghost" data-read-triage="kept" aria-pressed="${t === 'kept'}">${t === 'kept' ? 'Kept' : 'Keep'} ${keyHint('read.keep')}</button>
+        <button class="ghost" data-read-triage="archived" aria-pressed="${t === 'archived'}">${t === 'archived' ? 'Archived' : 'Archive'} ${keyHint('read.archive')}</button>
+        <button class="ghost" data-read-step="1" ${idx + 1 >= total ? 'disabled' : ''}>Next ${keyHint('read.next')}</button>
+        <button class="ghost ask-ai" data-inbox-ask aria-pressed="${!!ui.inboxChat}">Ask AI ${keyHint('read.ask')}</button>
+        <button class="ghost ask-ai" data-inbox-pad aria-pressed="${!!ui.inboxPad}">Scratchpad ${keyHint('read.pad')}</button>
+        <span class="muted small">${idx + 1} of ${num.format(total)}</span>
+      </div>`;
+}
+function renderInbox() {
+  const reading = ui.view === 'read';
+  const base = reading ? readQueue() : inboxBase();
+  const queue = reading ? base : inboxQueue();
+  ui.inboxQueue = queue;
+  if (!queue.find(r => r.id === ui.inboxId)) ui.inboxId = queue[0]?.id || null;
+  const current = store.byId.get(ui.inboxId);
+  view().className = `view inbox${reading ? ' reading' : ''}`;
+  if (!reading && !base.length && prefs.inboxWindow === 'all') { view().innerHTML = `<div class="inbox-empty"><p class="serif big">Inbox zero.</p><p class="muted">New bookmarks from FieldTheory, and files you drop in, land here.</p><div class="inbox-empty-actions">${modeToggle(false)}<button class="ghost" data-inbox-pad aria-pressed="${!!ui.inboxPad}">Inbox scratchpad</button></div>${ui.inboxPad ? inboxPadHtml() : ''}</div>`; if (ui.inboxPad && (!pad.loaded || Date.now() - pad.fetchedAt > 10_000)) loadPad(); return; }
+  const idx = current ? queue.indexOf(current) : -1;
+  const counts = `<a href="/archive" data-link>Archive <span>${num.format(store.records.filter(x => statusOk(x, 'archived')).length)}</span></a><a href="/trash" data-link>Trash <span>${num.format(store.records.filter(x => statusOk(x, 'deleted')).length)}</span></a>`;
+  const head = reading
+    ? `<div class="queue-head"><div class="queue-count"><span class="count">${num.format(queue.length)}</span><span class="muted">to read${ui.readFrom ? ` · <span class="read-from">${esc(ui.readFrom)}</span>` : ''}</span></div>${modeToggle(true)}<div class="queue-links"><a href="${esc(ui.readBack && !ui.readBack.startsWith('/read') ? ui.readBack : '/')}" data-link data-read-back>← Back</a><button class="link" data-inbox-pad aria-pressed="${!!ui.inboxPad}">Scratchpad</button></div></div>`
+    : `<div class="queue-head"><div class="queue-count"><span class="count">${num.format(queue.length)}</span><span class="muted">to triage${queue.length !== base.length ? ` · ${num.format(base.length)} in window` : ''}</span></div>${modeToggle(false)}<div class="queue-links">${counts}<button class="link" data-inbox-pad aria-pressed="${!!ui.inboxPad}">Scratchpad</button></div>${inboxControls(base)}</div>`;
+  const prevScroll = $('.queue')?.scrollTop || 0;
+  const list = current ? `<ol id="queue-list" style="height:${queue.length * QUEUE_ROW_H}px"></ol>` : '';
+  const main = current ? `
+      <div class="triage-main">
+      <div class="triage-scroll"><div class="reader-body inline${isDoc(current) ? ' has-doc' : ''}" id="triage-body">${readerContent(current, { docked: true })}</div></div>
+      <div class="triage-dock">
+      <div class="dock-meta">
+        <div class="tag-editor" data-tags="${current.id}">${tagEditor(current)}</div>
+        <textarea class="scratchpad" data-scratchpad="${current.id}" rows="1" placeholder="Scratchpad — why you saved this, what to do with it">${esc(store.overrides[current.id]?.scratchpad || '')}</textarea>
       </div>
+      ${dockBar(current, reading, idx, queue.length)}
       </div>
-      </div>${sideDock(current)}` : `<div class="inbox-empty"><p class="serif">Nothing to triage here.</p><button class="ghost" data-inbox-clear>Reset filters</button></div>${sideDock(null)}`;
+      </div>${sideDock(current)}` : `<div class="inbox-empty"><p class="serif">${reading ? 'Nothing to read here.' : 'Nothing to triage here.'}</p>${reading ? '<a class="ghost" href="/" data-link>Back to the library</a>' : '<button class="ghost" data-inbox-clear>Reset filters</button>'}</div>${sideDock(null)}`;
   view().innerHTML = `<aside class="queue" aria-label="Queue">${head}${list}</aside><section class="triage ${sideDock(current) ? 'with-chat' : ''}">${main}</section>`;
   if (ui.inboxPad && (!pad.loaded || Date.now() - pad.fetchedAt > 10_000)) loadPad();
   if (current) {
     fitScratchpads($('.triage-dock'));
-    markHighlights($('#triage-body'), current);
+    afterPaint($('#triage-body'), current, { docked: true });
     captureNow(current);
     if (ui.inboxChat) loadInboxChat(current.id);
     const scrollerEl = $('.queue');
@@ -619,6 +680,55 @@ function renderInbox() {
     renderQueueRows();
     scrollerEl.addEventListener('scroll', handleQueueScroll, { passive: true });
   }
+}
+// The queue after the library changed underneath it (files added, a rebuild), without redrawing the post.
+function refreshQueue() {
+  ui.inboxQueue = ui.view === 'read' ? readQueue() : inboxQueue();
+  const listEl = $('#queue-list'), count = $('.queue-count .count');
+  if (listEl) listEl.style.height = `${ui.inboxQueue.length * QUEUE_ROW_H}px`;
+  if (count) count.textContent = num.format(ui.inboxQueue.length);
+  renderQueueRows(); paintDock();
+}
+// The dock's buttons after a change to this bookmark (read, stacked, kept), without touching the post.
+function paintDock() {
+  const r = store.byId.get(ui.inboxId), bar = $('.triage-bar');
+  if (!r || !bar) return;
+  const q = ui.inboxQueue || [];
+  bar.outerHTML = dockBar(r, ui.view === 'read', q.findIndex(x => x.id === r.id), q.length);
+}
+// Move to another bookmark in the queue (either mode); in Read the address follows along.
+function pickQueued(id, { scroll = true } = {}) {
+  if (!id || !store.byId.has(id)) return;
+  ui.inboxId = id;
+  if (ui.view === 'read') { rememberOpened(id); history.replaceState({ ...history.state }, '', `/read/${id}`); }
+  renderInbox();
+  if (scroll) scrollTriageTop();
+  ensureQueueVisible(id);
+}
+async function readTriage(value) {
+  const id = ui.inboxId, o = store.overrides[id] || {};
+  if (!id) return;
+  const clear = o.triaged === value;
+  await saveOverride([id], clear ? { triaged: null } : { triaged: value }, { label: clear ? `Un-${TRIAGE_LABEL[value].toLowerCase()}` : TRIAGE_LABEL[value] });
+  updateInboxCount(); paintDock();
+  toast(clear ? 'Moved back to the inbox' : value === 'kept' ? 'Kept' : 'Archived', { undo: true });
+}
+async function readDelete() {
+  const id = ui.inboxId; if (!id) return;
+  const q = ui.inboxQueue || [], next = q[q.findIndex(r => r.id === id) + 1];
+  await saveOverride([id], { deleted: true }, { label: 'Move to Trash' });
+  ui.readList = ui.readList.filter(x => x !== id);
+  updateInboxCount(); toast('Moved to Trash · deleted in 30 days', { undo: true });
+  pickQueued(next?.id || ui.readList[0]);
+  if (!ui.readList.length) renderInbox();
+}
+// Switch between Read and Triage, keeping your place where it makes sense.
+function setMode(mode) {
+  if (mode === 'read' && ui.view !== 'read') {
+    ui.readList = (ui.inboxQueue || []).map(r => r.id);
+    ui.readFrom = 'Inbox'; ui.readBack = '/inbox';
+    if (ui.inboxId) navigate(`/read/${ui.inboxId}`); else navigate('/read');
+  } else if (mode === 'triage' && ui.view !== 'inbox') navigate('/inbox');
 }
 
 const TRIAGE_LABEL = { kept: 'Keep', archived: 'Archive', deleted: 'Move to Trash' };
@@ -647,13 +757,14 @@ async function triageCurrent(value) {
 // ── reader ──────────────────────────────────────────────────────────────
 // docked: the inbox pins tags and the scratchpad in a bar below the post instead.
 function readerContent(r, { docked = false } = {}) {
+  if (isDoc(r)) return docContent(r, { docked });
   const o = store.overrides[r.id] || {};
   const f = formatOf(r);
   const title = r.article?.title || '';
   const showMedia = !r.sensitive || prefs.showSensitive;
   const mediaBlock = (media = []) => showMedia && media.length ? `<div class="r-media n${Math.min(media.length, 4)}">${media.map(m => m.video && (m.type === 'video' || m.type === 'gif')
     ? `<video controls playsinline preload="none" poster="${esc(m.url)}" ${m.type === 'gif' ? 'loop muted autoplay' : ''} src="${esc(m.video)}"></video>`
-    : `<a href="${esc(img(m.url, 'orig'))}" target="_blank" rel="noopener"><img src="${esc(img(m.url, 'medium'))}" alt="${esc(m.alt || '')}" loading="lazy" referrerpolicy="no-referrer"></a>`).join('')}</div>` : '';
+    : `<a href="${esc(img(m.url, 'orig'))}" target="_blank" rel="noopener"><img src="${esc(img(m.url, 'medium'))}" alt="${esc(m.alt || m.description || '')}" loading="lazy" referrerpolicy="no-referrer"></a>`).join('')}</div>${isFile(r) && media[0]?.description ? `<p class="r-caption">${esc(media[0].description)}</p>` : ''}` : '';
   const card = (c) => c && (c.title || c.image) ? `<a class="r-card" href="${esc(c.url || '#')}" target="_blank" rel="noopener noreferrer">${c.image ? `<img src="${esc(c.image)}" alt="" loading="lazy" referrerpolicy="no-referrer">` : ''}<span class="domain">${esc(c.domain || host(c.url))}</span><strong>${esc(c.title || '')}</strong>${c.description ? `<span class="desc">${esc(c.description)}</span>` : ''}</a>` : '';
   // A post's thread parts, article and link card; the quoted post is rendered the same way.
   const postBody = (p) => {
@@ -667,10 +778,10 @@ function readerContent(r, { docked = false } = {}) {
   const quoted = q ? `<blockquote class="r-quote${q.thread || q.article ? ' full' : ''}"><div class="byline">${avatar(q.author || {})}<span class="name">${esc(q.author?.name || '')}</span><span class="handle">@${esc(q.author?.handle || '')}</span>${q.thread ? `<span class="q-kind">Thread · ${q.thread.length}</span>` : q.article ? '<span class="q-kind">Article</span>' : ''}${q.id ? `<a class="q-open" href="${esc(q.url || `https://x.com/i/status/${q.id}`)}" target="_blank" rel="noopener noreferrer">↗</a>` : ''}</div>${q.article?.title ? `<h2 class="r-title q-title">${esc(q.article.title)}</h2>` : ''}${postBody(q)}</blockquote>` : '';
   const pending = r.enrichment === 'pending';
   return `
-    <header class="r-head">${byline(r, false)}<div class="r-meta"><span>${fullDate(r.postedAt)}</span>${formatBadge(r)}<a href="${esc(r.url)}" target="_blank" rel="noopener noreferrer">Open ${r.provider === 'twitter' ? 'on X' : esc(host(r.url))} ↗</a></div>
+    <header class="r-head">${byline(r, false)}<div class="r-meta"><span>${fullDate(r.postedAt)}</span>${formatBadge(r)}${isFile(r) ? `<a href="${esc(r.url)}" target="_blank" rel="noopener" download="${esc(r.doc.name)}">Original file ↓</a>` : `<a href="${esc(r.url)}" target="_blank" rel="noopener noreferrer">Open ${r.provider === 'twitter' ? 'on X' : esc(host(r.url))} ↗</a>`}</div>
       ${readerMarks(r, { docked })}
       ${title ? `<h1 class="r-title">${esc(title)}</h1>` : ''}</header>
-    <div class="r-text">
+    <div class="r-text" data-bm="${esc(r.id)}">
       ${postBody(r)}
       ${quoted}
       ${pending ? `<p class="r-pending" data-pending="${r.id}">Capturing the full ${f === 'format:article' ? 'article' : 'thread'} from X…</p>` : ''}
@@ -680,8 +791,62 @@ function readerContent(r, { docked = false } = {}) {
       ${highlightsSection(r)}
       ${docked ? '' : `<div class="r-section"><h4>Tags</h4><div class="tag-editor" data-tags="${r.id}">${tagEditor(r)}</div></div>
       <div class="r-section"><h4>Scratchpad</h4><textarea class="scratchpad" data-scratchpad="${r.id}" rows="3" placeholder="Why you saved this, what to try, questions it raises. Agents can write here too.">${esc(o.scratchpad || '')}</textarea></div>`}
-      <div class="r-stats"><span>${fmt.format(r.engagement.likeCount || 0)} likes</span><span>${fmt.format(r.engagement.repostCount || 0)} reposts</span><span>${fmt.format(r.engagement.bookmarkCount || 0)} saves</span><span class="r-archive" data-archive-status="${r.id}"></span></div>
+      ${isFile(r) ? fileStats(r) : `<div class="r-stats"><span>${fmt.format(r.engagement.likeCount || 0)} likes</span><span>${fmt.format(r.engagement.repostCount || 0)} reposts</span><span>${fmt.format(r.engagement.bookmarkCount || 0)} saves</span><span class="r-archive" data-archive-status="${r.id}"></span></div>`}
     </footer>`;
+}
+
+const bytes = (n) => n >= 1e6 ? `${(n / 1e6).toFixed(n >= 1e7 ? 0 : 1)} MB` : `${Math.max(1, Math.round((n || 0) / 1e3))} KB`;
+const fileStats = (r) => `<div class="r-stats"><span>${esc(r.doc.name)}</span><span>${bytes(r.doc.size)}</span><span>Added ${fullDate(r.postedAt)}</span></div>`;
+
+// A book, PDF or text file: a title page with what's known about it, then the document itself
+// (mounted by doc-reader.js into .doc-mount), then the usual actions, highlights and notes.
+function docContent(r, { docked = false } = {}) {
+  const o = store.overrides[r.id] || {};
+  const d = r.doc;
+  const year = (d.published || '').slice(0, 4);
+  const facts = [
+    ['Published', d.published ? (d.published.length > 4 ? fullDate(d.published) : d.published) : ''],
+    ['Publisher', d.publisher], ['Language', d.language && (new Intl.DisplayNames(['en'], { type: 'language' }).of(d.language.split(/[-_]/)[0]) || d.language)], ['ISBN', d.isbn],
+    ['Length', [d.pages ? `${num.format(d.pages)} pages` : '', d.words ? `${num.format(d.words)} words` : '', readTime(minutes(r))].filter(Boolean).join(' · ')]
+  ].filter(([, v]) => v);
+  const p = progressOf(r);
+  return `
+    <header class="r-head doc-head">
+      <div class="doc-card">
+        ${d.cover ? `<img class="doc-cover" src="${esc(d.cover)}" alt="Cover">` : `<div class="doc-cover blank"><span>${esc(KIND_NAME[d.kind])}</span></div>`}
+        <div class="doc-info">
+          <span class="kicker">${esc(label(formatOf(r)))} · ${esc(KIND_NAME[d.kind])}${year ? ` · ${esc(year)}` : ''}</span>
+          <h1 class="r-title">${esc(r.title)}</h1>
+          ${d.authors?.length ? `<p class="doc-authors">${esc(d.authors.join(', '))}</p>` : ''}
+          ${facts.length ? `<dl class="doc-facts">${facts.map(([k, v]) => `<div><dt>${k}</dt><dd>${esc(v)}</dd></div>`).join('')}</dl>` : ''}
+          ${p > 0.005 ? `<div class="doc-progress-line"><span class="tile-progress"><i style="--p:${p}"></i></span><span class="muted small">${Math.round(p * 100)}% read</span></div>` : ''}
+        </div>
+      </div>
+      ${d.description ? `<p class="doc-desc">${esc(d.description)}</p>` : ''}
+      ${d.subjects?.length ? `<div class="doc-subjects">${d.subjects.slice(0, 10).map(x => `<span class="pill">${esc(x)}</span>`).join('')}</div>` : ''}
+      <div class="r-meta">${formatBadge(r)}<a href="${esc(r.url)}" target="_blank" rel="noopener" download="${esc(d.name)}">Original file ↓</a></div>
+      ${readerMarks(r, { docked })}
+    </header>
+    <div class="doc-mount" data-doc="${esc(r.id)}"></div>
+    <footer class="r-foot">
+      ${readerActions(r)}
+      ${highlightsSection(r)}
+      ${docked ? '' : `<div class="r-section"><h4>Tags</h4><div class="tag-editor" data-tags="${r.id}">${tagEditor(r)}</div></div>
+      <div class="r-section"><h4>Scratchpad</h4><textarea class="scratchpad" data-scratchpad="${r.id}" rows="3" placeholder="Why you saved this, what to try, questions it raises. Agents can write here too.">${esc(o.scratchpad || '')}</textarea></div>`}
+      ${fileStats(r)}
+    </footer>`;
+}
+
+// Tags Jev thought this file deserves that aren't in the taxonomy yet: one click adds the topic and tags it.
+function suggestedTags(r) {
+  const norm = (t) => t.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '').replace(/s$/, '');
+  const have = new Set(tagIds(r).map(id => norm(label(id))));
+  return (r.suggested || []).filter(x => !have.has(norm(x.label)) && !(store.overrides[r.id]?.dismissed || []).includes(x.label));
+}
+function suggestedHtml(r) {
+  const list = suggestedTags(r);
+  if (!list.length) return '';
+  return `<span class="suggested"><span class="sug-label" title="Jev read this and thinks these would be useful new topics">Suggested</span>${list.map(x => `<span class="sug"><button type="button" data-suggest="${esc(x.label)}" data-parent="${esc(x.parent || '')}" title="${esc(`New topic${x.parent ? ` under ${label(x.parent)}` : ''} · ${Math.round(x.score * 100)}% fit`)}">+ ${esc(x.label)}${x.parent ? `<span class="sug-in">${esc(label(x.parent))}</span>` : ''}</button><button type="button" class="sug-x" data-dismiss-suggest="${esc(x.label)}" aria-label="Dismiss" title="Not this one">×</button></span>`).join('')}</span>`;
 }
 
 function stripCardUrl(text, card) {
@@ -739,7 +904,7 @@ function tagEditor(r) {
   const order = ['format', 'topic', 'kind', 'label', 'contains'];
   tags.sort((a, b) => order.indexOf(facetOf(a.id)) - order.indexOf(facetOf(b.id)));
   return `${tags.map(t => `<span class="tag f-${facetOf(t.id)} ${t.by === 'you' ? 'mine' : ''}" title="${esc(`${store.facets.find(f => f.id === facetOf(t.id))?.label || ''} · ${t.by}`)}">${esc(ancestors(t.id).length ? `${label(ancestors(t.id)[0])} / ${label(t.id)}` : label(t.id))}<button data-untag="${esc(t.id)}" aria-label="Remove">×</button></span>`).join('')}
-    <span class="tag-add"><input data-tag-input placeholder="Add tag…" autocomplete="off"><div class="suggest" hidden></div></span>`;
+    <span class="tag-add"><input data-tag-input placeholder="Add tag…" autocomplete="off"><div class="suggest" hidden></div></span>${suggestedHtml(r)}`;
 }
 
 function openReader(id, list) {
@@ -779,6 +944,29 @@ function stepReader(d) {
   if (next) { history.replaceState({ ...history.state, reader: next.id }, '', `/b/${next.id}`); openReader(next.id); }
 }
 
+// Opening a bookmark: the reader (the inbox's layout, going through the list you opened it
+// from) or the dialog over the page, as set in Settings → Library & inbox. from names the list.
+function openBookmark(id, list, from) {
+  if (!store.byId.has(id)) return;
+  if (prefs.openIn === 'dialog') { openReader(id, list); return; }
+  closeReader({ fromPop: true });
+  const ids = (list?.length ? list : [store.byId.get(id)]).map(r => r.id);
+  ui.readList = ids.includes(id) ? ids : [id, ...ids];
+  ui.readFrom = from || (ui.view === 'library' ? libraryLabel() : ui.view === 'highlights' ? 'Highlights' : null);
+  ui.readBack = location.pathname + location.search;
+  ui.inboxId = id;
+  rememberOpened(id);
+  navigate(`/read/${id}`);
+}
+// What the library is showing, as the name of a reading list: "AI · Agents", "Search: evals".
+function libraryLabel() {
+  const bits = [...ui.filters].map(label);
+  if (ui.query) bits.push(`“${ui.query}”`);
+  const st = { inbox: 'Untriaged', kept: 'Kept', archived: 'Archive', deleted: 'Trash' }[ui.status];
+  return [st, ...bits].filter(Boolean).join(' · ') || 'Library';
+}
+const inQueue = () => ui.view === 'inbox' || ui.view === 'read';
+
 // Uncaptured bookmark opened: move it to the front of the capture queue and fill it in when ready.
 const capturing = new Set();
 async function captureNow(r) {
@@ -795,7 +983,7 @@ async function captureNow(r) {
   }
   capturing.delete(r.id);
   if (ui.readerId === r.id) { paintReader($('#reader-body'), r); }
-  if (ui.inboxId === r.id && ui.view === 'inbox' && $('#triage-body')) paintReader($('#triage-body'), r, { docked: true });
+  if (ui.inboxId === r.id && inQueue() && $('#triage-body')) paintReader($('#triage-body'), r, { docked: true });
 }
 
 function applyEnrichment(r, enr) {
@@ -904,7 +1092,7 @@ function conceptDetail(id, counts) {
     <label>Parent<select class="field" name="parent"><option value="">None (top level)</option>${parents.map(p => `<option value="${esc(p.id)}" ${p.id === c.parent ? 'selected' : ''}>${esc(p.parent ? `${label(p.parent)} / ${p.label}` : p.label)}</option>`).join('')}</select></label>
     <label>Keywords<textarea class="field" name="aliases" rows="4" placeholder="comma separated — bookmarks mentioning these get this tag">${esc((c.aliases || []).join(', '))}</textarea></label>
     <div class="t-form-actions"><button class="primary" type="submit">${isNew ? 'Create' : 'Save'}</button>${isNew ? '<button class="ghost" type="button" data-cancel-concept>Cancel</button>' : `<button class="ghost" type="button" data-browse="${esc(c.id)}">View bookmarks</button><button class="ghost danger" type="button" data-delete-concept="${esc(c.id)}">${c.origin === 'user' ? 'Delete' : 'Retire'}</button>`}</div>
-    ${samples.length ? `<div class="t-samples"><h4>Recent</h4>${samples.map(r => `<button type="button" class="t-sample" data-open="${r.id}"><span>${esc((r.title || snippet(r, 80)).slice(0, 80))}</span><span class="muted">@${esc(r.author.handle)}</span></button>`).join('')}</div>` : ''}
+    ${samples.length ? `<div class="t-samples"><h4>Recent</h4>${samples.map(r => `<button type="button" class="t-sample" data-open="${r.id}"><span>${esc((r.title || snippet(r, 80)).slice(0, 80))}</span><span class="muted">${esc(who(r))}</span></button>`).join('')}</div>` : ''}
   </form>`;
 }
 
@@ -959,6 +1147,7 @@ function renderSettings() {
       ${row('Show sensitive media', 'Posts flagged as sensitive by X.', toggle('showSensitive', prefs.showSensitive))}`),
     library: () => group('Library', `
       ${row('Layout', 'How bookmarks are drawn in the library.', seg('layout', [['wall', 'Wall'], ['grid', 'Grid'], ['list', 'List']]))}
+      ${row('Open bookmarks in', 'The reader keeps a list beside the post and your tags, scratchpad and actions below it, like the inbox. You go through the list you opened from. The dialog opens over the library instead.', seg('openIn', [['reader', 'Reader'], ['dialog', 'Dialog']]))}
       ${row('Default order', '', `<select id="settings-sort" aria-label="Default order">${SORTS.map(([v, l]) => `<option value="${v}" ${prefs.sort === v ? 'selected' : ''}>${l}</option>`).join('')}</select>`)}`) +
       group('Inbox', `
       ${row('Clear the backlog', 'Mark every untriaged bookmark older than 30 days as kept.', '<button class="ghost" data-backlog>Mark as kept</button>')}
@@ -967,6 +1156,7 @@ function renderSettings() {
       ${row('FieldTheory', `${esc(s?.source?.path || '—')}<br>Updated ${s?.source?.modifiedAt ? `${relDate(s.source.modifiedAt)} ago` : '—'} · Index built ${store.generatedAt ? `${relDate(store.generatedAt)} ago` : '—'} · ${num.format(store.records.length)} bookmarks`, '<button class="ghost" data-refresh>Rebuild now</button>')}
       ${row('Thread unrolling', e?.available ? `${num.format(enriched)} of ${num.format(store.records.length)} captured · ${num.format(threads)} threads unrolled${e.queued ? ` · ${num.format(e.queued)} queued` : ''}${e.yieldingTo ? ' · paused while the backfill script runs' : ''}${e.waitingUntil ? ` · rate-limited until ${new Date(e.waitingUntil).toLocaleTimeString()}` : ''}${e.lastError ? `<br><span class="warn">${esc(e.lastError)}</span>` : ''}` : 'X session cookies not found. Threads and articles can’t be expanded.', e?.available ? toggle('enrich', e.enabled, 'data-server-toggle') : '')}
       ${row('Local archive', `${s?.archive ? `${num.format(s.archive.saved)} images and avatars saved (${bytesFmt(s.archive.bytes)})${s.archive.queued ? ` · ${num.format(s.archive.queued)} downloading` : ''}${s.archive.gone ? ` · ${num.format(s.archive.gone)} were already gone from X` : ''}<br>` : ''}Local copies of every post’s images (video isn’t kept, only its poster frame), shown when X no longer serves them. FieldTheory keeps the post text; captured threads, articles and quoted posts are in <code>data/enrich/</code>.${s?.archive?.lastError && s.archive.retrying ? `<br><span class="warn">${esc(s.archive.lastError)}</span>` : ''}`, s?.archive ? toggle('archive', s.archive.enabled, 'data-server-toggle') : '')}
+      ${row('Your files', `${num.format(store.records.filter(isFile).length)} files added: ${['image', 'pdf', 'epub', 'mobi', 'text'].map(k => [k, store.records.filter(r => r.doc?.kind === k).length]).filter(([, n]) => n).map(([k, n]) => `${num.format(n)} ${KIND_NAME[k]}`).join(', ') || 'none yet'}. Drop images, PDFs, EPUB or MOBI books, or text and Markdown files anywhere in Corpus, paste them, or use <strong>Add files</strong>. Jev tags each one and suggests new topics.`, '<button class="ghost" data-add-files>Add files</button>')}
       ${row('Saved web pages', `${num.format(store.records.filter(r => r.provider === 'web').length)} pages saved by URL (via Ask or MCP <code>create_bookmark</code>).`, '')}`) +
       group('Classification', `
       ${keyRow('TYPESAFE_API_KEY', 'TypeSafe Jev key', 'Classifies bookmarks from full thread content.', s?.keys)}
@@ -1075,7 +1265,7 @@ function md(text, cites) {
         const r = store.byId.get(id);
         if (!r) return '';
         if (!cites.includes(id)) cites.push(id);
-        return `<button class="cite" data-open="${id}" title="${esc(`@${r.author.handle} — ${(r.title || '').slice(0, 80)}`)}">${cites.indexOf(id) + 1}</button>`;
+        return `<button class="cite" data-open="${id}" title="${esc(`${who(r)} — ${(r.title || '').slice(0, 80)}`)}">${cites.indexOf(id) + 1}</button>`;
       });
       const h = line.match(/^(#{1,4})\s+(.*)/), li = line.match(/^\s*[-*•]\s+(.*)/), oli = line.match(/^\s*\d+[.)]\s+(.*)/), q = line.match(/^&gt;\s?(.*)/);
       if (h) { flush(); close(); out.push(`<h4>${inline(h[2])}</h4>`); }
@@ -1113,7 +1303,7 @@ function messageHtml(m, i, s) {
   const sources = cites.map(id => store.byId.get(id)).filter(Boolean);
   const meta = m.error ? `<span class="warn">${esc(m.error)}</span>` : m.streaming ? `<span class="thinking">${esc(m.status || 'Thinking')}</span>` : [msgTime(m.at), modelLabel(m.model), m.usage?.cost ? `$${m.usage.cost < 0.001 ? m.usage.cost.toFixed(5) : m.usage.cost.toFixed(4)}` : m.model?.endsWith(':free') ? 'free' : ''].filter(Boolean).join(' · ');
   return `<div class="msg assistant ${m.streaming ? 'streaming' : ''}"><div class="msg-body">${body}</div>
-    ${sources.length ? `<div class="msg-sources">${sources.map((r, i) => `<button data-open="${r.id}"><span class="n">${i + 1}</span>${avatar(r.author)}<span class="s-title">${esc((r.title || snippet(r, 80)).slice(0, 90))}</span><span class="muted">@${esc(r.author.handle)}</span></button>`).join('')}</div>` : ''}
+    ${sources.length ? `<div class="msg-sources">${sources.map((r, i) => `<button data-open="${r.id}"><span class="n">${i + 1}</span>${avatarOf(r)}<span class="s-title">${esc((r.title || snippet(r, 80)).slice(0, 90))}</span><span class="muted">${esc(who(r))}</span></button>`).join('')}</div>` : ''}
     ${m.actions?.length ? `<ul class="msg-actions">${m.actions.map(a => `<li>${esc(a.summary)}</li>`).join('')}</ul>` : ''}
     <div class="msg-meta">${m.error ? `${msgTime(m.at)}${meta}` : `<span>${meta}</span>`}${msgTools(m, i, s)}</div></div>`;
 }
@@ -1256,13 +1446,13 @@ function inboxChatHtml(r) {
       ${GRIP}<span class="kicker">Ask AI</span>${ui.inboxPad ? '' : '<button class="ghost small side-add" data-inbox-pad title="Open the inbox scratchpad below">+ Scratchpad</button>'}
       <button class="x" data-inbox-ask-close aria-label="Close" title="Close (esc)">×</button>
     </div>
-    <div class="tc-attached" title="This entry is attached to the conversation">${avatar(r.author)}<span class="tc-title">${esc((r.title || snippet(r, 80)).slice(0, 90))}</span><span class="muted">@${esc(r.author.handle)}</span></div>
+    <div class="tc-attached" title="This entry is attached to the conversation">${avatarOf(r)}<span class="tc-title">${esc((r.title || snippet(r, 80)).slice(0, 90))}</span><span class="muted">${esc(who(r))}</span></div>
     ${chatHtml(session(`b:${r.id}`, { scope: 'bookmark', bookmarkId: r.id }))}
   </section>`;
 }
 async function loadInboxChat(id, { focus = false } = {}) {
   const s = await bookmarkSession(id);
-  if (ui.view !== 'inbox' || ui.inboxId !== id || !ui.inboxChat) return;
+  if (!inQueue() || ui.inboxId !== id || !ui.inboxChat) return;
   paintChat(s, { full: true });
   if (focus) $('.side-panel[data-panel="chat"] textarea')?.focus();
 }
@@ -1360,9 +1550,17 @@ function markOne(root, h) {
   }
   return true;
 }
+// Every highlight root: a post's text, a book chapter, a PDF page's text layer. Posts have no
+// location; a chapter or page does (data-loc), and only its own highlights are marked in it.
+const HL_ROOT = '.r-text, .hl-root';
+function markRoot(root, r) {
+  const loc = root.dataset.loc || '';
+  const hs = highlightsOf(r.id);
+  for (const h of hs) if (locKey(h.loc) === loc) markOne(root, h);
+  for (const m of $$('mark.hl', root)) m.classList.toggle('has-note', !!hs.find(h => h.id === m.dataset.hl)?.note);
+}
 function markHighlights(el, r) {
-  const root = el && $('.r-text', el);
-  if (root) for (const h of highlightsOf(r.id)) markOne(root, h);
+  if (el) for (const root of $$(HL_ROOT, el)) markRoot(root, r);
 }
 // Everything that shows a post in the reader or the inbox goes through here.
 // A scratchpad is as tall as its text (CSS sets the minimum and maximum), so it reads in full.
@@ -1375,22 +1573,60 @@ const fitScratchpads = (root = document) => $$('textarea[data-scratchpad]', root
 
 function paintReader(el, r, opts) {
   if (!el) return;
+  const doc = el.querySelector('.doc-mount')?._doc;
+  if (doc && doc.id === r.id && doc.el.isConnected) {
+    // An open book or PDF stays open, where you were; only what's around it is redrawn.
+    const t = document.createElement('template');
+    t.innerHTML = readerContent(r, opts);
+    for (const part of ['.r-head', '.r-foot']) { const next = t.content.querySelector(part); if (next) el.querySelector(part)?.replaceWith(next); }
+    doc.remark();
+    requestAnimationFrame(() => fitScratchpads(el));
+    return;
+  }
   el.innerHTML = readerContent(r, opts);
+  afterPaint(el, r);
+}
+// After a post is drawn: highlights, archived images, and for a book or PDF, the document itself.
+function afterPaint(el, r) {
+  if (!el) return;
   requestAnimationFrame(() => fitScratchpads(el));
   markHighlights(el, r);
   archivedPosters(el);
   archiveStatus(r);
+  const mount = $('.doc-mount', el);
+  if (mount && isDoc(r)) mountDoc(mount, r, docHooks(r, el));
 }
+function docHooks(r, el) {
+  return {
+    pos: store.overrides[r.id]?.pos || null,
+    mark: (root) => markRoot(root, r),
+    // Your place, saved quietly (not an undoable change).
+    save: (pos, progress) => {
+      const cur = store.overrides[r.id]?.pos;
+      if (!store.byId.has(r.id) || (cur && cur.ch === pos.ch && cur.page === pos.page && Math.abs((cur.f || 0) - (pos.f || 0)) < 0.01)) return;
+      saveOverride([r.id], { pos, progress }, { undoable: false });
+    },
+    cover: (blob) => uploadCover(r, blob),
+    notes: () => highlightsOf(r.id).map(h => ({ id: h.id, loc: h.loc, text: h.quote || h.text, note: h.note })),
+    jump: (hid) => jumpToHighlight(el, hid)
+  };
+}
+// The document open in front of you: in the reader dialog, else in the reader view.
+const currentDoc = () => (!$('#reader').hidden ? $('#reader-body .doc-mount') : $('#triage-body .doc-mount'))?._doc || null;
 
+// PDFs have pages to cite; a book's chapter files don't match its chapters, so they aren't named.
+const whereOf = (r, h) => h.loc?.page != null ? `p. ${h.loc.page + 1}` : '';
 function highlightsSection(r) {
   const hs = highlightsOf(r.id);
   if (!hs.length) return '';
-  return `<div class="r-section"><h4>Highlights · ${hs.length}</h4><ol class="hl-list">${hs.map(h => `<li><button class="hl-quote" data-hl-jump="${esc(h.id)}">${esc(clip(h.quote || h.text, 280))}</button><button class="x" data-hl-remove="${esc(h.id)}" data-bm="${r.id}" aria-label="Remove highlight" title="Remove highlight">×</button></li>`).join('')}</ol></div>`;
+  const sorted = isDoc(r) ? [...hs].sort((a, b) => (a.loc?.page ?? a.loc?.ch ?? 0) - (b.loc?.page ?? b.loc?.ch ?? 0)) : hs;
+  const notes = hs.filter(h => h.note).length;
+  return `<div class="r-section"><h4>Highlights · ${hs.length}${notes ? ` · ${notes} note${notes === 1 ? '' : 's'}` : ''}</h4><ol class="hl-list">${sorted.map(h => `<li><div class="hl-body"><button class="hl-quote" data-hl-jump="${esc(h.id)}">${whereOf(r, h) ? `<span class="hl-where">${esc(whereOf(r, h))}</span>` : ''}${esc(clip(h.quote || h.text, 280))}</button>${h.note ? `<p class="hl-note-text">${esc(h.note)}</p>` : ''}</div><span class="hl-actions"><button class="x" data-hl-note-edit="${esc(h.id)}" data-bm="${r.id}" aria-label="${h.note ? 'Edit note' : 'Add a note'}" title="${h.note ? 'Edit note' : 'Add a note'}">✎</button><button class="x" data-hl-remove="${esc(h.id)}" data-bm="${r.id}" aria-label="Remove highlight" title="Remove highlight">×</button></span></li>`).join('')}</ol></div>`;
 }
 const hlMark = (r) => { const n = highlightsOf(r.id).length; return n ? `<span class="hl-mark" title="${n} highlight${n === 1 ? '' : 's'}"><i></i>${n}</span>` : ''; };
 
-// The bookmark a .r-text belongs to: the reader's, or the inbox's current entry.
-const bookmarkOfBody = (el) => el?.closest('.reader-body')?.id === 'triage-body' ? ui.inboxId : ui.readerId;
+// The bookmark a highlight root belongs to (roots carry data-bm); older markup: the reader's or the inbox's.
+const bookmarkOfBody = (el) => el?.closest('[data-bm]')?.dataset.bm || (el?.closest('.reader-body')?.id === 'triage-body' ? ui.inboxId : ui.readerId);
 
 // The selection as it reads, paragraph breaks included, without part numbers or buttons.
 function selectedText(range) {
@@ -1403,12 +1639,12 @@ function selectedText(range) {
   box.remove();
   return text;
 }
-async function highlightSelection() {
+async function highlightSelection({ withNote = false } = {}) {
   const sel = getSelection();
-  if (!sel?.rangeCount || sel.isCollapsed) { toast('Select some text in the post first'); return; }
+  if (!sel?.rangeCount || sel.isCollapsed) { toast('Select some text first'); return; }
   const range = sel.getRangeAt(0);
   const common = range.commonAncestorContainer;
-  const root = (common.nodeType === Node.ELEMENT_NODE ? common : common.parentElement)?.closest('.r-text');
+  const root = (common.nodeType === Node.ELEMENT_NODE ? common : common.parentElement)?.closest(HL_ROOT);
   const r = root && store.byId.get(bookmarkOfBody(root));
   if (!r) { toast('Select text in the post to highlight it'); return; }
   const ix = textIndex(root);
@@ -1417,11 +1653,15 @@ async function highlightSelection() {
   while (e > s && /\s/.test(ix.text[e - 1])) e--;
   if (e - s < 2) return;
   const quote = selectedText(range) || ix.text.slice(s, e);
-  const h = { id: Math.random().toString(36).slice(2, 10), text: ix.text.slice(s, e), quote: quote.slice(0, 6000), prefix: ix.text.slice(Math.max(0, s - 40), s), suffix: ix.text.slice(e, e + 40), at: new Date().toISOString() };
+  const loc = parseLoc(root.dataset.loc);
+  const dup = highlightsOf(r.id).find(x => x.text === ix.text.slice(s, e) && locKey(x.loc) === locKey(loc) && x.prefix === ix.text.slice(Math.max(0, s - 40), s));
+  if (dup) { sel.removeAllRanges(); hidePop(); if (withNote) { const m = $(`mark[data-hl="${CSS.escape(dup.id)}"]`); if (m) editNote(r.id, dup.id, m.getBoundingClientRect()); } else toast('Already highlighted'); return; }
+  const h = { id: Math.random().toString(36).slice(2, 10), text: ix.text.slice(s, e), quote: quote.slice(0, 6000), prefix: ix.text.slice(Math.max(0, s - 40), s), suffix: ix.text.slice(e, e + 40), at: new Date().toISOString(), ...(loc && { loc }) };
   sel.removeAllRanges(); hidePop();
-  await saveOverride([r.id], { highlights: [...highlightsOf(r.id), h] }, { label: 'Highlight' });
+  await saveOverride([r.id], { highlights: [...highlightsOf(r.id), h] }, { label: withNote ? 'Note' : 'Highlight' });
   repaintBookmark(r.id);
-  toast('Highlighted', { undo: true });
+  if (withNote) { const m = $(`mark[data-hl="${CSS.escape(h.id)}"]`); if (m) editNote(r.id, h.id, m.getBoundingClientRect()); }
+  else toast('Highlighted', { undo: true });
 }
 async function removeHighlight(id, hid) {
   const rest = highlightsOf(id).filter(h => h.id !== hid);
@@ -1431,10 +1671,37 @@ async function removeHighlight(id, hid) {
   if (ui.view === 'highlights' && $('#reader').hidden) renderHighlights();
   toast('Highlight removed', { undo: true });
 }
-function jumpToHighlight(el, hid) {
-  const m = el && $(`mark[data-hl="${CSS.escape(hid)}"]`, el);
+// Notes: a few words of your own on a highlight, like a note in the margin.
+function editNote(id, hid, rect) {
+  const h = highlightsOf(id).find(x => x.id === hid);
+  if (!h) return;
+  showPop(rect, `<form class="hl-note" data-hl-note="${esc(hid)}" data-bm="${esc(id)}"><p class="hl-note-q">${esc(clip(h.quote || h.text, 120))}</p><textarea rows="3" placeholder="Your note — a thought, a question, a link to something else">${esc(h.note || '')}</textarea><div class="hl-note-bar"><span class="muted small">${capsOf('Mod+Enter')}</span>${h.note ? '<button type="button" data-hl-note-clear>Delete note</button>' : ''}<button type="submit" class="primary">Save</button></div></form>`, 'note');
+  requestAnimationFrame(() => { const ta = $('#hl-pop textarea'); ta?.focus(); ta?.setSelectionRange(ta.value.length, ta.value.length); });
+}
+async function saveNote(id, hid, text) {
+  const note = String(text || '').trim();
+  const hs = highlightsOf(id).map(h => h.id !== hid ? h : note ? { ...h, note, noteAt: new Date().toISOString() } : (({ note: _, noteAt: __, ...rest }) => rest)(h));
+  hidePop();
+  await saveOverride([id], { highlights: hs }, { label: note ? 'Note' : 'Delete note' });
+  repaintBookmark(id);
+  if (ui.view === 'highlights' && $('#reader').hidden) renderHighlights();
+  toast(note ? 'Note saved' : 'Note deleted', { undo: true });
+}
+async function jumpToHighlight(el, hid) {
+  const find = () => el && $(`mark[data-hl="${CSS.escape(hid)}"]`, el);
+  let m = find();
+  // In a book or PDF, the passage may be in another chapter or a page not drawn yet.
+  const doc = !m && el && $('.doc-mount', el)?._doc;
+  if (doc) {
+    const h = highlightsOf(doc.id).find(x => x.id === hid);
+    await doc.ready;
+    if (h?.loc) { await doc.goTo(h.loc); m = find(); }
+  }
   if (!m) { toast('That passage isn’t in the current text any more'); return; }
-  m.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  // In a book, wait for its pictures: they change where everything below them is.
+  const docHere = el && $('.doc-mount', el)?._doc;
+  if (docHere) { await docHere.settle(); m = find() || m; }
+  m.scrollIntoView({ block: 'center', behavior: docHere ? 'auto' : 'smooth' });
   $$(`mark[data-hl="${CSS.escape(hid)}"]`, el).forEach(x => { x.classList.remove('flash'); void x.offsetWidth; x.classList.add('flash'); });
 }
 
@@ -1444,7 +1711,7 @@ function hlPop() {
   if (!el) {
     document.body.insertAdjacentHTML('beforeend', '<div id="hl-pop" class="hl-pop" role="toolbar" hidden></div>');
     el = $('#hl-pop');
-    el.addEventListener('pointerdown', (e) => e.preventDefault()); // keep the selection
+    el.addEventListener('pointerdown', (e) => { if (!e.target.closest('textarea, input')) e.preventDefault(); }); // keep the selection
   }
   return el;
 }
@@ -1463,9 +1730,10 @@ function checkSelection() {
   const sel = getSelection();
   const range = sel?.rangeCount && !sel.isCollapsed ? sel.getRangeAt(0) : null;
   const common = range?.commonAncestorContainer;
-  const root = common && (common.nodeType === Node.ELEMENT_NODE ? common : common.parentElement)?.closest('.r-text');
+  const root = common && (common.nodeType === Node.ELEMENT_NODE ? common : common.parentElement)?.closest(HL_ROOT);
+  if ($('#hl-pop')?.dataset.kind === 'note' && !$('#hl-pop').hidden) return;
   if (!root || !sel.toString().trim()) { hidePop('new'); return; }
-  showPop(range.getBoundingClientRect(), `<button data-hl-add>Highlight${matchMedia('(pointer: coarse)').matches ? '' : ' <kbd>h</kbd>'}</button>`, 'new');
+  showPop(range.getBoundingClientRect(), `<button data-hl-add>Highlight${matchMedia('(pointer: coarse)').matches ? '' : ' <kbd>h</kbd>'}</button><button data-hl-add-note>Add note</button>`, 'new');
 }
 let selTimer = 0;
 document.addEventListener('selectionchange', () => { clearTimeout(selTimer); selTimer = setTimeout(checkSelection, 160); });
@@ -1473,6 +1741,10 @@ document.addEventListener('scroll', () => { hidePop('mark'); if ($('#hl-pop')?.d
 document.addEventListener('click', async (ev) => {
   const t = ev.target;
   if (t.closest('[data-hl-add]')) { await highlightSelection(); return; }
+  if (t.closest('[data-hl-add-note]')) { await highlightSelection({ withNote: true }); return; }
+  const ne = t.closest('[data-hl-note-edit]');
+  if (ne) { const m = $(`mark[data-hl="${CSS.escape(ne.dataset.hlNoteEdit)}"]`); editNote(ne.dataset.bm, ne.dataset.hlNoteEdit, (m || ne).getBoundingClientRect()); return; }
+  if (t.closest('[data-hl-note-clear]')) { const f = t.closest('[data-hl-note]'); await saveNote(f.dataset.bm, f.dataset.hlNote, ''); return; }
   const rm = t.closest('[data-hl-remove]');
   if (rm) { await removeHighlight(rm.dataset.bm, rm.dataset.hlRemove); return; }
   const cp = t.closest('[data-hl-copy]');
@@ -1484,11 +1756,23 @@ document.addEventListener('click', async (ev) => {
   const mark = t.closest('mark.hl');
   if (mark && !t.closest('a') && getSelection()?.isCollapsed !== false) {
     const id = bookmarkOfBody(mark);
-    showPop(mark.getBoundingClientRect(), `<button data-hl-copy="${esc(mark.dataset.hl)}" data-bm="${id}">Copy</button><button data-hl-remove="${esc(mark.dataset.hl)}" data-bm="${id}">Remove highlight</button>`, 'mark');
+    const note = highlightsOf(id).find(h => h.id === mark.dataset.hl)?.note;
+    showPop(mark.getBoundingClientRect(), `${note ? `<p class="hl-pop-note">${esc(note)}</p>` : ''}<button data-hl-copy="${esc(mark.dataset.hl)}" data-bm="${id}">Copy</button><button data-hl-note-edit="${esc(mark.dataset.hl)}" data-bm="${id}">${note ? 'Edit note' : 'Add note'}</button><button data-hl-remove="${esc(mark.dataset.hl)}" data-bm="${id}">Remove</button>`, 'mark');
     return;
   }
-  if (!t.closest('#hl-pop')) hidePop('mark');
+  if (!t.closest('#hl-pop')) { hidePop('mark'); hidePop('note'); }
 });
+document.addEventListener('submit', async (ev) => {
+  const f = ev.target.closest('[data-hl-note]');
+  if (!f) return;
+  ev.preventDefault();
+  await saveNote(f.dataset.bm, f.dataset.hlNote, $('textarea', f).value);
+});
+document.addEventListener('keydown', (ev) => {
+  if (!ev.target.matches('.hl-note textarea')) return;
+  if (ev.key === 'Escape') { ev.preventDefault(); ev.stopPropagation(); hidePop('note'); }
+  if (ev.key === 'Enter' && (ev.metaKey || ev.ctrlKey)) { ev.preventDefault(); ev.target.form.requestSubmit(); }
+}, true);
 
 // Highlights page: every highlight, newest first; opening one scrolls the reader to it.
 function allHighlights() {
@@ -1503,7 +1787,7 @@ function allHighlights() {
 function renderHighlights() {
   const all = allHighlights();
   const q = (ui.hlQuery || '').toLowerCase().trim();
-  const list = q ? all.filter(({ r, h }) => `${h.quote || h.text} ${r.title} ${r.author.name} ${r.author.handle}`.toLowerCase().includes(q)) : all;
+  const list = q ? all.filter(({ r, h }) => `${h.quote || h.text} ${h.note || ''} ${r.title} ${r.author.name} ${r.author.handle}`.toLowerCase().includes(q)) : all;
   ui.hlList = list;
   view().className = 'view highlights';
   view().innerHTML = `
@@ -1511,15 +1795,16 @@ function renderHighlights() {
     ${all.length ? `<p class="muted small hl-count">${num.format(list.length)}${q ? ` of ${num.format(all.length)}` : ''} highlight${list.length === 1 ? '' : 's'} from ${num.format(new Set(list.map(x => x.r.id)).size)} bookmark${new Set(list.map(x => x.r.id)).size === 1 ? '' : 's'}</p>` : ''}
     ${list.length ? `<ol class="hl-page">${list.map(({ r, h }) => `<li class="hl-card" data-hl-open="${r.id}" data-hl-id="${esc(h.id)}" tabindex="0">
         <blockquote class="serif">${esc(clip(h.quote || h.text, 900)).replace(/\n/g, '<br>')}</blockquote>
-        <div class="hl-src">${avatar(r.author)}<span class="name">${esc(r.author.name)}</span><span class="hl-title">${esc(titleOf(r, 90))}</span><span class="date">${relDate(h.at)}</span></div>
+        ${h.note ? `<p class="hl-card-note">${esc(h.note)}</p>` : ''}
+        <div class="hl-src">${avatarOf(r)}<span class="name">${esc(isFile(r) ? r.author.name || fileLine(r) : r.author.name)}</span>${whereOf(r, h) ? `<span class="hl-where">${esc(whereOf(r, h))}</span>` : ''}<span class="hl-title">${esc(titleOf(r, 90))}</span><span class="date">${relDate(h.at)}</span></div>
       </li>`).join('')}</ol>`
       : `<div class="empty"><p class="serif">${all.length ? 'No highlights match.' : 'No highlights yet.'}</p>${all.length ? '' : `<p class="muted">Select text while reading, then tap <strong>Highlight</strong> or press ${keyHint('reader.highlight')}.</p>`}</div>`}`;
 }
 function openHighlight(id, hid) {
   const seen = new Set();
   const list = (ui.hlList || []).map(x => x.r).filter(r => !seen.has(r.id) && seen.add(r.id));
-  openReader(id, list.length ? list : undefined);
-  requestAnimationFrame(() => requestAnimationFrame(() => jumpToHighlight($('#reader-body'), hid)));
+  openBookmark(id, list.length ? list : undefined, 'Highlights');
+  requestAnimationFrame(() => requestAnimationFrame(() => jumpToHighlight(prefs.openIn === 'dialog' ? $('#reader-body') : $('#triage-body'), hid)));
 }
 
 // ── inbox scratchpad ────────────────────────────────────────────────────
@@ -1582,7 +1867,7 @@ async function savePad() {
 }
 function toggleInboxPad(open = !ui.inboxPad) {
   ui.inboxPad = open;
-  if (ui.view !== 'inbox') { closeReader(); navigate('/inbox'); } else renderInbox();
+  if (!inQueue()) { closeReader(); navigate('/inbox'); } else renderInbox();
   if (open) requestAnimationFrame(() => $('#pad-text')?.focus());
 }
 document.addEventListener('input', (ev) => {
@@ -1733,16 +2018,23 @@ function route() {
   closeReader({ fromPop: true });
   if (p === '/archive' || p === '/trash') ui.status = p === '/archive' ? 'archived' : 'deleted';
   else if (p === '/' && (ui.status === 'archived' || ui.status === 'deleted')) ui.status = 'active';
-  ui.view = p.startsWith('/ask') ? 'ask' : p.startsWith('/inbox') ? 'inbox' : p.startsWith('/highlights') ? 'highlights' : p.startsWith('/taxonomy') ? 'taxonomy' : p.startsWith('/settings') ? 'settings' : 'library';
+  const rd = p.match(/^\/read(?:\/([\w-]+))?/);
+  if (rd) {
+    // A reading list you came to directly (a link, a reload): the library as it's filtered now.
+    const id = rd[1] && store.byId.has(rd[1]) ? rd[1] : null;
+    if (!ui.readList.length || (id && !ui.readList.includes(id))) { const lib = sortRecords(query(), prefs.sort).map(r => r.id); ui.readList = id && !lib.includes(id) ? [id, ...lib] : lib; ui.readFrom = libraryLabel(); }
+    if (id) ui.inboxId = id; else if (!ui.readList.includes(ui.inboxId)) ui.inboxId = ui.readList[0] || null;
+  }
+  ui.view = rd ? 'read' : p.startsWith('/ask') ? 'ask' : p.startsWith('/inbox') ? 'inbox' : p.startsWith('/highlights') ? 'highlights' : p.startsWith('/taxonomy') ? 'taxonomy' : p.startsWith('/settings') ? 'settings' : 'library';
   render();
 }
 
 function render() {
   $('main').dataset.ready = '1';
-  $$('[data-nav]').forEach(a => a.setAttribute('aria-current', a.dataset.nav === ui.view ? 'page' : 'false'));
+  $$('[data-nav]').forEach(a => a.setAttribute('aria-current', a.dataset.nav === (ui.view === 'read' ? 'library' : ui.view) ? 'page' : 'false'));
   $('#search-wrap').hidden = ui.view !== 'library';
   if (ui.view === 'library') renderLibrary();
-  else if (ui.view === 'inbox') renderInbox();
+  else if (inQueue()) renderInbox();
   else if (ui.view === 'taxonomy') renderTaxonomy();
   else if (ui.view === 'highlights') renderHighlights();
   else if (ui.view === 'ask') renderAsk();
@@ -1751,10 +2043,138 @@ function render() {
 
 function navigate(path) { if (ui.mobileRail) setRail(false); history.pushState({}, '', path); window.scrollTo(0, 0); route(); }
 function updateInboxCount() { const n = inboxBase().length; $('#inbox-count').textContent = n ? fmt.format(n) : ''; }
-function toast(msg, { undo: withUndo = false } = {}) {
+function toast(msg, { undo: withUndo = false, action = null, sticky = false } = {}) {
   const t = $('#toast');
-  t.innerHTML = `<span>${esc(msg)}</span>${withUndo ? `<button data-undo>Undo ${keyHint('undo')}</button>` : ''}`;
-  t.hidden = false; clearTimeout(t._h); t._h = setTimeout(() => { t.hidden = true; }, withUndo ? 5000 : 2600);
+  t.innerHTML = `<span>${esc(msg)}</span>${withUndo ? `<button data-undo>Undo ${keyHint('undo')}</button>` : ''}${action ? `<button data-toast-act>${esc(action.label)}</button>` : ''}`;
+  t._act = action?.run || null;
+  t.hidden = false; clearTimeout(t._h);
+  if (!sticky) t._h = setTimeout(() => { t.hidden = true; }, withUndo || action ? 6000 : 2600);
+}
+const sleep = (ms) => new Promise(res => setTimeout(res, ms));
+
+// ── adding files: drop, paste or pick images, PDFs, books and text ──────────
+// Each is saved on the server, read (chapters, pages, metadata, cover), added to the library
+// and the inbox, then tagged by Jev in the background, which may also suggest new topics.
+const ACCEPT = '.pdf,.epub,.mobi,.azw,.azw3,.txt,.md,.markdown,.html,.htm,image/*';
+function pickFiles() {
+  const input = Object.assign(document.createElement('input'), { type: 'file', multiple: true, accept: ACCEPT });
+  input.addEventListener('change', () => uploadFiles([...input.files]));
+  input.click();
+}
+async function uploadFiles(files) {
+  files = files.filter(f => f.size > 0);
+  if (!files.length) return;
+  const added = [];
+  for (const [i, f] of files.entries()) {
+    toast(`Adding ${files.length > 1 ? `${i + 1} of ${files.length} · ` : ''}${f.name}…`, { sticky: true });
+    try {
+      const res = await fetch('/api/files', { method: 'POST', headers: { 'x-file-name': encodeURIComponent(f.name), 'content-type': 'application/octet-stream' }, body: f });
+      if (res.status === 401) { location.reload(); return; }
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || !json.ok) throw new Error(json.error || `Error ${res.status}`);
+      added.push({ ...json, file: f });
+    } catch (e) { toast(`${f.name}: ${e.message}`, { sticky: true }); await sleep(3500); }
+  }
+  if (!added.length) return;
+  await loadAll(); updateInboxCount();
+  refreshAfterAdd(added);
+  const fresh = added.filter(a => !a.duplicate);
+  const first = added[0];
+  const open = { label: 'Open', run: () => openBookmark(first.id, added.map(a => store.byId.get(a.id)).filter(Boolean), 'Just added') };
+  if (!fresh.length) toast(added.length === 1 ? `Already in Corpus: “${first.title}”` : `All ${added.length} were already in Corpus`, { action: open });
+  else toast(fresh.length === 1 ? `Added “${fresh[0].title}”${fresh[0].job ? ' · Jev is tagging it…' : ''}` : `Added ${fresh.length} files${fresh.some(a => a.job) ? ' · Jev is tagging them…' : ''}`, { action: open });
+  // A PDF's cover is its first page, drawn here: the server has no canvas.
+  for (const a of fresh) if (a.kind === 'pdf') pdfCover(await a.file.arrayBuffer()).then(b => b && uploadCover(a.id, b)).catch(() => {});
+  watchTagging(fresh.filter(a => a.job));
+}
+function refreshAfterAdd(added) {
+  if (!$('#reader').hidden) return;
+  if (ui.view === 'library') refreshCards();
+  else if (ui.view === 'inbox' && !ui.inboxId) renderInbox();
+  else if (inQueue()) { refreshQueue(); const cur = store.byId.get(ui.inboxId); if (cur && added.some(a => a.id === cur.id)) rerenderTags(cur); }
+}
+async function watchTagging(list) {
+  if (!list.length) return;
+  for (let i = 0; i < 40 && list.some(a => !a.state); i++) {
+    await sleep(i < 6 ? 1500 : 3000);
+    for (const a of list.filter(x => !x.state)) {
+      const j = (await api('/api/ops', { method: 'POST', body: { tool: 'get_job', args: { id: a.job } } }).catch(() => null))?.result;
+      if (j?.status && j.status !== 'running') a.state = j;
+    }
+  }
+  await loadAll(); updateInboxCount();
+  refreshAfterAdd(list);
+  if (!$('#reader').hidden && list.some(a => a.id === ui.readerId)) repaintBookmark(ui.readerId);
+  const done = list.filter(a => a.state?.status === 'done');
+  if (list.length === 1 && done.length) {
+    const r = store.byId.get(done[0].id), s = done[0].state;
+    const tags = (s.tags || []).filter(id => store.conceptById.has(id) && /^(topic|kind):/.test(id)).slice(0, 3).map(label);
+    toast(`Tagged “${shortTitle(r || { title: done[0].title })}”${tags.length ? `: ${tags.join(', ')}` : ''}${s.suggested?.length ? ` · ${s.suggested.length} new topic${s.suggested.length === 1 ? '' : 's'} suggested` : ''}`, { action: { label: 'Open', run: () => openBookmark(done[0].id, [r].filter(Boolean), 'Just added') } });
+  } else if (done.length) toast(`Jev tagged ${done.length} new file${done.length === 1 ? '' : 's'}`);
+  else if (list.some(a => a.state?.status === 'failed')) toast(`Tagging failed: ${list.find(a => a.state?.status === 'failed').state.error || 'unknown error'}`);
+}
+async function uploadCover(target, blob) {
+  const id = typeof target === 'string' ? target : target.id;
+  const res = await fetch(`/api/files/${id}/cover`, { method: 'PUT', headers: { 'content-type': blob.type || 'image/jpeg' }, body: blob }).then(r => r.ok ? r.json() : null).catch(() => null);
+  const r = store.byId.get(id);
+  if (res?.cover && r?.doc) {
+    r.doc.cover = res.cover;
+    for (const el of $$(`[data-doc="${id}"]`)) el.closest('.reader-body')?.querySelector('.doc-cover.blank')?.replaceWith(Object.assign(document.createElement('img'), { className: 'doc-cover', src: res.cover, alt: 'Cover' }));
+    if (ui.view === 'library' && $('#reader').hidden) refreshCards();
+  }
+}
+
+// Drop anywhere: files, or a link dragged in from another tab (saved like any web page).
+let dragDepth = 0, draggingInside = false;
+const dropKind = (e) => { const types = [...(e.dataTransfer?.types || [])]; return types.includes('Files') ? 'files' : !draggingInside && types.includes('text/uri-list') ? 'link' : null; };
+function showDrop(kind) {
+  let el = $('#drop');
+  if (!el) { document.body.insertAdjacentHTML('beforeend', '<div id="drop" class="drop-zone" hidden><div class="drop-box"><p class="serif"></p><p class="muted small"></p></div></div>'); el = $('#drop'); }
+  if (kind) {
+    $('.serif', el).textContent = kind === 'link' ? 'Drop to save this link' : 'Drop to add to Corpus';
+    $('.muted', el).textContent = kind === 'link' ? 'Its page is saved and tagged, like any bookmark. Links to PDFs and books are added as files.' : 'Images, PDFs, EPUB and MOBI books, text and Markdown. Each lands in your inbox, and Jev tags it.';
+  }
+  el.hidden = !kind;
+}
+document.addEventListener('dragstart', () => { draggingInside = true; });
+document.addEventListener('dragend', () => { draggingInside = false; });
+window.addEventListener('dragenter', (e) => { const k = dropKind(e); if (!k) return; e.preventDefault(); dragDepth++; showDrop(k); });
+window.addEventListener('dragover', (e) => { if (!dropKind(e)) return; e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; });
+window.addEventListener('dragleave', (e) => { if (!dropKind(e)) return; if (--dragDepth <= 0) { dragDepth = 0; showDrop(null); } });
+window.addEventListener('drop', async (e) => {
+  const k = dropKind(e);
+  dragDepth = 0; showDrop(null);
+  if (!k) return;
+  e.preventDefault();
+  if (k === 'files') { uploadFiles([...e.dataTransfer.files]); return; }
+  const url = (e.dataTransfer.getData('text/uri-list') || '').split(/\r?\n/).find(l => /^https?:\/\//.test(l));
+  if (!url) return;
+  toast(`Saving ${host(url)}…`, { sticky: true });
+  try {
+    const { result } = await api('/api/ops', { method: 'POST', body: { tool: 'create_bookmark', args: { url } } });
+    await loadAll(); updateInboxCount(); refreshAfterAdd([{ id: result.id }]);
+    toast(result.summary || 'Saved', { action: { label: 'Open', run: () => openBookmark(result.id, [store.byId.get(result.id)].filter(Boolean), 'Just added') } });
+    if (result.job) watchTagging([{ id: result.id, job: result.job, title: result.title }]);
+  } catch (err) { toast(err.message); }
+});
+// Paste an image (a screenshot) or a file anywhere outside a text box.
+document.addEventListener('paste', (e) => {
+  const files = [...(e.clipboardData?.files || [])];
+  if (!files.length || (e.target.matches?.('input, textarea, [contenteditable]') && !files.some(f => f.type.startsWith('image/')))) return;
+  e.preventDefault();
+  uploadFiles(files.map(f => f.name && f.name !== 'image.png' ? f : new File([f], `Pasted image ${new Date().toISOString().slice(0, 16).replace('T', ' ')}.${(f.type.split('/')[1] || 'png').replace('jpeg', 'jpg')}`, { type: f.type })));
+});
+
+// Jev's suggested topic, accepted: create it (or use one that now exists) and tag this file.
+async function acceptSuggestion(btn) {
+  const r = store.byId.get(btn.closest('[data-tags]')?.dataset.tags);
+  if (!r) return;
+  const name = btn.dataset.suggest, parent = btn.dataset.parent || null;
+  const existing = store.concepts.find(c => c.facet !== 'source' && c.label.toLowerCase() === name.toLowerCase());
+  const id = existing?.id || await createConcept({ facet: 'topic', labelText: name, parent: parent && store.conceptById.has(parent) ? parent : null });
+  await setTags(r, { add: [id] });
+  rerenderTags(r);
+  toast(existing ? `Tagged ${label(id)}` : `New topic “${name}”${parent && store.conceptById.has(parent) ? ` under ${label(parent)}` : ''}, tagged`, { undo: true });
 }
 
 // ── events ────────────────────────────────────────────────────────────────
@@ -1776,7 +2196,14 @@ document.addEventListener('click', async (ev) => {
   if (d.untag) { const r = store.byId.get(t.closest('[data-tags]').dataset.tags); await setTags(r, { remove: [d.untag] }); rerenderTags(r); return; }
   if (t.closest('.suggest') && (d.sid || d.create)) { await pickSuggestion(t); return; }
   if (d.unstack) { await toggleStack(d.unstack); return; }
-  if (d.open && !ev.target.closest('a[href]:not([data-open])')) { ev.preventDefault(); openReader(d.open, t.closest('.stack') ? stackList() : ui.view === 'library' ? ui.results : store.records.filter(r => r.id === d.open)); return; }
+  if (d.open && !ev.target.closest('a[href]:not([data-open])')) {
+    ev.preventDefault();
+    // Citations in a chat open over it, so the conversation stays where it is.
+    if (t.closest('.msg, .chat, .side-dock, .t-samples') && !t.closest('.stack')) { openReader(d.open, store.records.filter(r => r.id === d.open)); return; }
+    if (t.closest('.stack')) openBookmark(d.open, stackList(), 'The stack');
+    else openBookmark(d.open, ui.view === 'library' ? ui.results : undefined);
+    return;
+  }
   if (d.filter) { ui.filters.has(d.filter) ? ui.filters.delete(d.filter) : ui.filters.add(d.filter); ui.visible = PAGE; syncUrl(); renderLibrary(); return; }
   if (d.unfilter) { ui.filters.delete(d.unfilter); ui.visible = PAGE; syncUrl(); renderLibrary(); return; }
   if (d.caret) { ui.railOpen.has(d.caret) ? ui.railOpen.delete(d.caret) : ui.railOpen.add(d.caret); $('.rail').innerHTML = renderRail(); return; }
@@ -1789,8 +2216,16 @@ document.addEventListener('click', async (ev) => {
   if (d.inboxFormat) { savePrefs({ inboxFormat: d.inboxFormat }); ui.inboxId = null; renderInbox(); return; }
   if (d.inboxClear !== undefined) { savePrefs({ inboxFormat: 'all', inboxTopic: '', inboxWindow: 'all' }); ui.inboxId = null; updateInboxCount(); renderInbox(); return; }
   if (d.triage) { await triageCurrent(d.triage); return; }
-  if (d.skip !== undefined) { const q = ui.inboxQueue; ui.inboxId = q[q.findIndex(r => r.id === ui.inboxId) + 1]?.id || q[0]?.id; renderInbox(); scrollTriageTop(); return; }
-  if (d.pick) { ui.inboxId = d.pick; renderInbox(); return; }
+  if (d.skip !== undefined) { const q = ui.inboxQueue; pickQueued(q[q.findIndex(r => r.id === ui.inboxId) + 1]?.id || q[0]?.id); return; }
+  if (d.pick) { pickQueued(d.pick, { scroll: true }); return; }
+  if (d.mode) { setMode(d.mode); return; }
+  if (d.readStep) { inboxStep(Number(d.readStep)); return; }
+  if (d.readTriage) { await readTriage(d.readTriage); return; }
+  if (d.readRestore !== undefined) { await saveOverride([ui.inboxId], { deleted: null }, { label: 'Restore' }); updateInboxCount(); paintDock(); repaintBookmark(ui.inboxId); toast('Restored', { undo: true }); return; }
+  if (d.readAll !== undefined) { const first = ui.results?.[0]; if (first) { const was = prefs.openIn; prefs.openIn = 'reader'; openBookmark(first.id, ui.results); prefs.openIn = was; } return; }
+  if (d.addFiles !== undefined) { pickFiles(); return; }
+  if (d.suggest) { await acceptSuggestion(t); return; }
+  if (d.dismissSuggest) { const id = t.closest('[data-tags]')?.dataset.tags || ui.readerId; const o = store.overrides[id] || {}; await saveOverride([id], { dismissed: [...(o.dismissed || []), d.dismissSuggest] }, { label: 'Dismiss suggestion' }); rerenderTags(store.byId.get(id)); return; }
   if (d.inboxAsk !== undefined) { toggleInboxChat(); return; }
   if (d.inboxAskClose !== undefined) { toggleInboxChat(false); return; }
   if (d.facet) { ui.taxFacet = d.facet; ui.taxSelected = null; renderTaxonomy(); return; }
@@ -1849,6 +2284,7 @@ document.addEventListener('click', async (ev) => {
   if (d.stack) { await toggleStack(d.stack); return; }
   if (d.markRead) { await toggleRead(d.markRead); return; }
   if (d.undo !== undefined) { await undo(); return; }
+  if (d.toastAct !== undefined) { const run = $('#toast')._act; $('#toast').hidden = true; run?.(); return; }
   if (d.mobileSearch !== undefined) { if (ui.view !== 'library') navigate('/'); $('#search').focus(); $('#search').select(); return; }
   if (d.skill) { skillSel = d.skill; renderSettings(); return; }
   if (d.skillNew !== undefined) { skillSel = '__new'; renderSettings(); $('.skill-form input[name=name]')?.focus(); return; }
@@ -2000,6 +2436,26 @@ const KEYMAP = [
   ['reader.delete', 'Reader', 'Move to Trash', ['#']],
   ['reader.stack', 'Reader', 'Add to / take off the stack', ['S']],
   ['reader.done', 'Reader', 'Mark read / unread', ['D']],
+  ['reader.contents', 'Reader', 'Contents and notes (books, PDFs)', ['Shift+C']],
+  ['reader.nextSection', 'Reader', 'Next chapter or page', [']']],
+  ['reader.prevSection', 'Reader', 'Previous chapter or page', ['[']],
+  ['read.next', 'Read', 'Next in the list', ['J']],
+  ['read.prev', 'Read', 'Previous in the list', ['K']],
+  ['read.done', 'Read', 'Done reading / unread', ['D']],
+  ['read.stack', 'Read', 'Add to / take off the stack', ['S']],
+  ['read.keep', 'Read', 'Keep', ['M']],
+  ['read.archive', 'Read', 'Archive', ['E']],
+  ['read.delete', 'Read', 'Move to Trash', ['#']],
+  ['read.tag', 'Read', 'Add a tag', ['T']],
+  ['read.note', 'Read', 'Write in the scratchpad', ['N']],
+  ['read.highlight', 'Read', 'Highlight the selected text', ['H']],
+  ['read.open', 'Read', 'Open original', ['O']],
+  ['read.ask', 'Read', 'Ask AI about this', ['A']],
+  ['read.pad', 'Read', 'Inbox scratchpad', ['P']],
+  ['read.contents', 'Read', 'Contents and notes (books, PDFs)', ['Shift+C']],
+  ['read.nextSection', 'Read', 'Next chapter or page', [']']],
+  ['read.prevSection', 'Read', 'Previous chapter or page', ['[']],
+  ['read.mode.triage', 'Read', 'Switch to Triage', ['I']],
   ['inbox.keep', 'Inbox', 'Keep', ['Enter']],
   ['inbox.archive', 'Inbox', 'Archive', ['E']],
   ['inbox.delete', 'Inbox', 'Move to Trash', ['#']],
@@ -2009,6 +2465,7 @@ const KEYMAP = [
   ['inbox.ask', 'Inbox', 'Ask AI about this entry', ['A']],
   ['inbox.pad', 'Inbox', 'Inbox scratchpad', ['P']],
   ['inbox.highlight', 'Inbox', 'Highlight the selected text', ['H']],
+  ['read.mode.read', 'Inbox', 'Switch to Read (go through the queue without triaging)', ['R']],
   ['tax.new', 'Taxonomy', 'New concept', ['N']],
   ['ask.new', 'Ask', 'New chat', ['N']]
 ];
@@ -2038,6 +2495,8 @@ function comboOf(ev) {
 const CAP = { Mod: isMac ? '⌘' : 'Ctrl', Shift: '⇧', Alt: isMac ? '⌥' : 'Alt', Enter: '⏎', Escape: 'esc', ArrowDown: '↓', ArrowUp: '↑', ArrowLeft: '←', ArrowRight: '→', Space: 'space', Backspace: '⌫', Tab: 'tab' };
 const capsOf = (binding) => binding.split(' ').map(step => step.split('+').map(p => `<kbd>${esc(CAP[p] || (p.length === 1 ? (step.includes('Shift') ? p : p.toLowerCase()) : p))}</kbd>`).join('')).join('');
 // keyHint(actionId) shows the current bindings; keyHint("a b  c") keeps the old literal form.
+// A binding as plain text, for tooltips.
+const capsText = (id) => bindingsOf(id).map(b => b.split(' ').map(step => step.split('+').map(p => CAP[p] || (p.length === 1 ? p.toLowerCase() : p)).join('')).join(' ')).join(' / ');
 const keyHint = (k) => keyDef.has(k)
   ? bindingsOf(k).map(capsOf).join('<span class="key-or">or</span>')
   : k.trim().split(/\s{2,}/).map(g => g.split(' ').filter(Boolean).map(x => `<kbd>${esc(x)}</kbd>`).join('')).join('<span class="key-or">or</span>');
@@ -2080,6 +2539,9 @@ function commands() {
     go('Library', '/', 'go.library'), go('Inbox', '/inbox', 'go.inbox'), go('Highlights', '/highlights', 'go.highlights'), go('Ask', '/ask', 'go.ask'), go('Taxonomy', '/taxonomy', 'go.taxonomy'), go('Settings', '/settings', 'go.settings'), go('Archive', '/archive', 'go.archive'), go('Trash', '/trash', 'go.trash'),
     { group: 'Actions', label: undoStack.length ? `Undo: ${undoStack.at(-1).label}` : 'Undo', hint: 'undo', run: undo },
     { group: 'Actions', label: redoStack.length ? `Redo: ${redoStack.at(-1).label}` : 'Redo', hint: 'redo', run: redo },
+    { group: 'Actions', label: 'Add files: images, PDFs, EPUB or MOBI books, text', run: () => pickFiles() },
+    { group: 'Actions', label: 'Read through the library as it’s filtered now', run: () => { closeReader(); const list = sortRecords(query(), prefs.sort); if (list[0]) { const was = prefs.openIn; prefs.openIn = 'reader'; openBookmark(list[0].id, list, libraryLabel()); prefs.openIn = was; } } },
+    { group: 'Actions', label: 'Triage the inbox', run: () => { closeReader(); navigate('/inbox'); } },
     { group: 'Actions', label: 'Open the inbox scratchpad', hint: 'inbox.pad', run: () => { closeReader(); ui.inboxPad = true; navigate('/inbox'); } },
     { group: 'Actions', label: 'New chat', run: () => { const s = session('corpus', { scope: 'corpus' }); if (!s.streaming) { s.messages = []; s.conversationId = null; } closeReader(); navigate('/ask'); } },
     { group: 'Actions', label: 'Wall layout', hint: 'lib.wall', run: lib(() => savePrefs({ layout: 'wall' })) },
@@ -2129,7 +2591,7 @@ function paletteItems(qRaw) {
 }
 
 function bookmarkItem(r, group) {
-  return { group, label: (r.title || snippet(r, 80)).slice(0, 90) || `@${r.author.handle}`, meta: `@${r.author.handle} · ${label(formatOf(r))}`, avatar: r.author, run: () => openReader(r.id, ui.results?.length ? ui.results : store.records) };
+  return { group, label: (r.title || snippet(r, 80)).slice(0, 90) || who(r), meta: `${who(r)} · ${label(formatOf(r))}`, avatarHtml: avatarOf(r), run: () => { closeReader(); openBookmark(r.id, ui.view === 'library' && ui.results?.length ? ui.results : undefined); } };
 }
 
 function openPalette() {
@@ -2154,7 +2616,7 @@ function paintPalette(q) {
   $('#palette-list').innerHTML = palette.items.map((it, i) => {
     const head = it.group !== group ? `<div class="p-group">${esc(it.group)}</div>` : '';
     group = it.group;
-    return `${head}<button class="p-item ${i === 0 ? 'on' : ''}" data-pi="${i}" role="option">${it.avatar ? avatar(it.avatar) : ''}<span class="p-label">${esc(it.label)}</span>${it.meta ? `<span class="p-meta">${esc(it.meta)}</span>` : ''}${it.hint ? `<span class="p-hint">${keyHint(it.hint)}</span>` : ''}</button>`;
+    return `${head}<button class="p-item ${i === 0 ? 'on' : ''}" data-pi="${i}" role="option">${it.avatarHtml || ''}<span class="p-label">${esc(it.label)}</span>${it.meta ? `<span class="p-meta">${esc(it.meta)}</span>` : ''}${it.hint ? `<span class="p-hint">${keyHint(it.hint)}</span>` : ''}</button>`;
   }).join('') || '<p class="p-empty">No matches</p>';
 }
 function movePalette(d) {
@@ -2190,7 +2652,7 @@ function repaintBookmark(id) {
   if (!r) return;
   const readerOpen = !$('#reader').hidden;
   if (readerOpen && ui.readerId === id) paintReader($('#reader-body'), r);
-  if (ui.view === 'inbox' && ui.inboxId === id && $('#triage-body')) paintReader($('#triage-body'), r, { docked: true });
+  if (inQueue() && ui.inboxId === id && $('#triage-body')) { paintReader($('#triage-body'), r, { docked: true }); paintDock(); }
   else if (ui.view === 'library' && !readerOpen) refreshCards();
 }
 const shortTitle = (r) => { const t = titleOf(r, 60); return t.length > 44 ? `${t.slice(0, 44).replace(/\s+\S*$/, '')}…` : t; };
@@ -2283,9 +2745,7 @@ function inboxStep(d) {
   const i = q.findIndex(r => r.id === ui.inboxId);
   const next = q[i + d];
   if (!next) return;
-  ui.inboxId = next.id; renderInbox();
-  scrollTriageTop();
-  ensureQueueVisible(next.id);
+  pickQueued(next.id);
 }
 
 // Dispatcher ---------------------------------------------------------------
@@ -2314,6 +2774,17 @@ const ACTIONS = {
   'inbox.ask': () => ui.inboxId && toggleInboxChat(),
   'inbox.pad': () => toggleInboxPad(),
   'reader.highlight': () => highlightSelection(), 'inbox.highlight': () => highlightSelection(),
+  'reader.contents': () => currentDoc()?.toggleContents(), 'reader.nextSection': () => currentDoc()?.step(1), 'reader.prevSection': () => currentDoc()?.step(-1),
+  'read.contents': () => currentDoc()?.toggleContents(), 'read.nextSection': () => currentDoc()?.step(1), 'read.prevSection': () => currentDoc()?.step(-1),
+  'read.next': () => inboxStep(1), 'read.prev': () => inboxStep(-1),
+  'read.done': () => ui.inboxId && toggleRead(ui.inboxId), 'read.stack': () => ui.inboxId && toggleStack(ui.inboxId),
+  'read.keep': () => readTriage('kept'), 'read.archive': () => readTriage('archived'), 'read.delete': readDelete,
+  'read.tag': () => { const i = $('.triage-dock [data-tag-input]'); i?.focus(); },
+  'read.note': () => { const n = $('.triage-dock [data-scratchpad]'); n?.focus(); },
+  'read.highlight': () => highlightSelection(),
+  'read.open': () => { const r = store.byId.get(ui.inboxId); if (r) window.open(r.url, '_blank', 'noopener'); },
+  'read.ask': () => ui.inboxId && toggleInboxChat(), 'read.pad': () => toggleInboxPad(),
+  'read.mode.triage': () => setMode('triage'), 'read.mode.read': () => setMode('read'),
   'tax.new': () => { ui.taxSelected = '__new'; renderTaxonomy(); $('.t-form input[name=label]')?.focus(); },
   'ask.new': () => $('[data-new-chat]')?.click()
 };
@@ -2357,13 +2828,15 @@ document.addEventListener('keydown', async (ev) => {
     if (t.id === 'search' && (ev.key === 'ArrowDown' || ev.key === 'Enter')) { ev.preventDefault(); t.blur(); moveCard('down'); }
     return;
   }
+  if (ev.key === 'Escape' && currentDoc() && !currentDoc().el.querySelector('.doc-panel').hidden) { currentDoc().toggleContents(false); return; }
   if (ev.key === 'Escape' && readerOpen) { closeReader(); return; }
   if (ev.key === 'Escape' && ui.mobileRail) { setRail(false); return; }
-  if (ev.key === 'Escape' && ui.view === 'inbox' && ui.inboxChat) { toggleInboxChat(false); return; }
-  if (ev.key === 'Escape' && ui.view === 'inbox' && ui.inboxPad) { toggleInboxPad(false); return; }
+  if (ev.key === 'Escape' && inQueue() && ui.inboxChat) { toggleInboxChat(false); return; }
+  if (ev.key === 'Escape' && inQueue() && ui.inboxPad) { toggleInboxPad(false); return; }
   if (ev.key === 'Escape' && !$('#hl-pop')?.hidden) { hidePop(); return; }
+  if (ev.key === 'Escape' && ui.view === 'read') { navigate(ui.readBack && !ui.readBack.startsWith('/read') ? ui.readBack : '/'); return; }
 
-  const ctx = readerOpen ? 'Reader' : { library: 'Library', inbox: 'Inbox', highlights: 'Highlights', taxonomy: 'Taxonomy', ask: 'Ask', settings: 'Settings' }[ui.view];
+  const ctx = readerOpen ? 'Reader' : { library: 'Library', inbox: 'Inbox', read: 'Read', highlights: 'Highlights', taxonomy: 'Taxonomy', ask: 'Ask', settings: 'Settings' }[ui.view];
   const active = KEYMAP.filter(([, g]) => g === 'Anywhere' || g === 'Go to' || g === ctx);
   let seq = combo;
   if (pendingChord && Date.now() - pendingAt < 1200) seq = `${pendingChord} ${combo}`;
@@ -2375,7 +2848,7 @@ document.addEventListener('keydown', async (ev) => {
   // Fixed navigation keys.
   if (ctx === 'Library') {
     if (ARROWS[combo]) { ev.preventDefault(); moveCard(ARROWS[combo]); return; }
-    if ((combo === 'Enter' || combo === 'O') && t.dataset?.open) { ev.preventDefault(); openReader(t.dataset.open, t.closest('.stack') ? stackList() : ui.results); return; }
+    if ((combo === 'Enter' || combo === 'O') && t.dataset?.open) { ev.preventDefault(); if (t.closest('.stack')) openBookmark(t.dataset.open, stackList(), 'The stack'); else openBookmark(t.dataset.open, ui.results); return; }
   }
   if (ctx === 'Highlights' && (combo === 'Enter' || combo === 'O') && t.dataset?.hlOpen) { ev.preventDefault(); openHighlight(t.dataset.hlOpen, t.dataset.hlId); return; }
   if (ctx === 'Taxonomy') {
@@ -2482,5 +2955,5 @@ function installRow(row) {
   route();
   setInterval(poll, 60_000);
   // Agents write to the inbox scratchpad too; pick up their changes while it's open.
-  setInterval(() => { if (ui.view === 'inbox' && ui.inboxPad && !document.hidden && !pad.saving && pad.draft == null) loadPad(); }, 15_000);
+  setInterval(() => { if (inQueue() && ui.inboxPad && !document.hidden && !pad.saving && pad.draft == null) loadPad(); }, 15_000);
 })();

@@ -14,8 +14,10 @@ Press `⌘K` (or `Ctrl K`) for the command palette. It searches bookmarks, jumps
 
 - **Anywhere:** `/` search · `g l/i/h/a/t/s` go to Library, Inbox, Highlights, Ask, Taxonomy, Settings · `⇧D` dark mode · `esc` back
 - **Library:** arrow keys or `h j k l` move between cards in wall, grid and list · `⏎`/`o` open · `1 2 3` layout · `x` clear filters
-- **Reader:** `j/k` or `←/→` next/previous · `c`/`r` chat/read · `t` tag · `n` scratchpad · `h` highlight the selection · `o` open on X · `m`/`e` keep/archive · `s` stack · `d` done reading
-- **Inbox:** `⏎` keep · `e` archive · `j/↓` next · `k/↑` previous · `o` open · `p` inbox scratchpad · `h` highlight
+- **Reader, Read mode:** `j/↓` next · `k/↑` previous · `d` done reading · `s` stack · `m`/`e` keep/archive · `t` tag · `n` scratchpad · `h` highlight the selection · `a` Ask AI · `p` inbox scratchpad · `o` open the original · `i` switch to Triage
+- **Reader, Triage mode (the Inbox):** `⏎` keep · `e` archive · `#` delete · `j/↓` next · `k/↑` previous · `o` open in the dialog · `p` inbox scratchpad · `h` highlight · `r` switch to Read
+- **Books and PDFs:** `⇧C` contents and notes · `]` / `[` next/previous chapter or page
+- **Dialog:** `j/k` or `←/→` next/previous · `c`/`r` chat/read · `t` tag · `n` scratchpad · `h` highlight the selection · `o` open on X · `m`/`e` keep/archive · `s` stack · `d` done reading
 
 ## Run
 
@@ -65,9 +67,34 @@ Format is derived from the content. A thread is anything with two or more self-r
 | `data/build/` | generated index served at `/data/*` |
 | `data/enrich/`, `data/classify/`, `data/describe/` | per-bookmark caches |
 | `data/manual.json` | bookmarks saved by URL (web pages) |
+| `data/files/` | files you added: each one's original, `doc.json` (metadata, contents), chapters as reader HTML, book images, cover, and a PDF's page text |
 | `data/skills/`, `data/chats/` | skills and saved conversations |
 
 Secrets go in the ignored `.env` (`TYPESAFE_API_KEY`, `OPENROUTER_API_KEY`, `CORPUS_PASSWORD_HASH`, `CORPUS_SESSION_SECRET`, `CORPUS_MCP_TOKEN`), which the server and scripts load on start.
+
+## The reader: Read and Triage
+
+Opening a bookmark takes you to the reader: the list you opened it from on the left, the post (or book, or PDF) in the middle, your tags and scratchpad below it, and Ask AI and the inbox scratchpad in the sidebar. It has two modes, switched at the top of the list:
+
+- **Read** (`/read/<id>`) goes through the list you came from: the library as searched and filtered, the stack, your highlights, or the inbox. Read, retag, highlight and add notes, mark it read (`d`) or stack it (`s`), then go to the next (`j`). Keep and archive are there too, but nothing moves you on. **Read these** in the library toolbar starts at the top of what the library is showing.
+- **Triage** (`/inbox`) is the inbox: untriaged bookmarks, each kept, archived or deleted, and on to the next.
+
+To open bookmarks in a dialog over the library instead, set Settings → Library & inbox → **Open bookmarks in** to **Dialog**. Citations in Ask always open in the dialog, so the conversation stays put.
+
+## Files, books and PDFs
+
+Drop files anywhere in Corpus, paste them (a screenshot, say), or use **Add files** in the library toolbar or the command palette:
+
+- **Images** (PNG, JPEG, GIF, WebP, AVIF, SVG) are kept as they are. The vision model describes them, Jev tags them from the description, and images named like `IMG_2231` or `Screenshot …` are titled by what they show.
+- **PDFs** open page by page in the reader (drawn by pdf.js, with text you can select and highlight), with their outline as contents and zoom. Their first page becomes the cover.
+- **EPUB and MOBI books** open chapter by chapter, with their contents, images and cover. MOBI files must be DRM-free and PalmDOC-compressed (most are); convert others to EPUB.
+- **Text and Markdown** (and HTML) open like a short book, split at headings when long.
+
+Each file lands in the inbox and the library with a title page: cover, title, author, publisher, date, language, ISBN, length, description and subjects, as far as the file says. Your place in a book or PDF is kept and shown as a progress bar on its card. Dropping a link from another tab saves it; a link to a PDF or book (in Ask or with `create_bookmark`) is downloaded and added as a file. Files are limited to `UPLOAD_MAX_MB` (default 300).
+
+**Tagging.** Jev reads a file's metadata, contents and passages from its start and middle, and picks its topic and kind as for any bookmark, with the option to say that no topic fits. New tags are proposed from the file's own subjects and by the small OpenRouter model that describes images (`DESCRIBE_MODEL`), and Jev judges each one: is it a real, useful subject of this item, and which topic would it sit under? Up to three that pass show as **Suggested** beside the tags: click one to add it as a topic and tag the file, or × to dismiss it. The taxonomy has formats for books, documents and notes, a *Your files* source, kinds for books, fiction, references, screenshots, photos, diagrams and memes, and Culture subtopics for books, history, philosophy, art and film.
+
+**Highlights and notes.** Select text in a post, a chapter or a PDF page and choose **Highlight** (`h`) or **Add note**. Click a highlight to copy it, add or edit its note, or remove it. A book's or PDF's highlights and notes are also under **Contents → Highlights & notes** (`⇧C`), and opening one from the Highlights page goes to its chapter or page.
 
 ## The stack and read state
 
@@ -105,9 +132,9 @@ Everything the site can do is one set of tools (`lib/ops.mjs`), shared by the As
 
 | area | tools |
 | --- | --- |
-| read | `get_overview`, `search_bookmarks` (keywords + topic/kind/label/format/status/author/date filters, sorts), `read_bookmark` (full thread/article, tags with confidence, optional linked page) |
+| read | `get_overview`, `search_bookmarks` (keywords + topic/kind/label/format/status/author/date filters, sorts), `read_bookmark` (full thread/article, tags with confidence, optional linked page; for files, their metadata, contents and suggested tags), `read_document` (a book's chapters or a PDF's pages, in full) |
 | bookmarks | `update_bookmark` (tags, triage, scratchpad, restore), `bulk_update_bookmarks` (ids or filter, dry run), `create_bookmark` (save any URL with its text), `delete_bookmark` |
-| scratchpads | `read_scratchpad`, `write_scratchpad` (the inbox-wide pad, or one bookmark's with `id`; append by default), `list_highlights` |
+| scratchpads | `read_scratchpad`, `write_scratchpad` (the inbox-wide pad, or one bookmark's with `id`; append by default), `list_highlights` (with notes, and the page or section of a book or PDF) |
 | taxonomy | `list_concepts`, `create_concept`, `update_concept`, `delete_concept` |
 | skills | `list_skills`, `get_skill`, `create_skill`, `update_skill`, `delete_skill` |
 | jobs | `run_classification` (Jev, background) + `get_job`, `capture_threads`, `rebuild_index` |
