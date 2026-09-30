@@ -71,7 +71,7 @@ function msgTools(m, i, s) {
 }
 function messageHtml(m, i, s) {
   if (m.role === 'user') {
-    if (s?.editing === i) return `<div class="msg user editing"><form class="msg-edit" data-msg-edit="${i}"><textarea rows="2" aria-label="Edit message">${esc(m.content)}</textarea><div class="msg-edit-bar"><button type="button" class="ghost small" data-msg-act="cancel-edit">Cancel <kbd>esc</kbd></button><button class="primary" type="submit">Send <kbd>⏎</kbd></button></div></form></div>`;
+    if (s?.editing === i) return `<div class="msg user editing"><form class="msg-edit" data-msg-edit="${i}"><textarea rows="2" aria-label="Edit message">${esc(m.content)}</textarea><div class="msg-edit-bar"><button type="button" class="ghost small" data-msg-act="cancel-edit">Cancel <kbd>esc</kbd></button><button class="primary" type="submit">Send <kbd>enter</kbd></button></div></form></div>`;
     return `<div class="msg user"><div class="msg-body">${esc(m.content).replace(/\n/g, '<br>')}</div><div class="msg-meta">${msgTools(m, i, s)}${msgTime(m.at)}</div></div>`;
   }
   const cites = [];
@@ -101,7 +101,7 @@ export function chatHtml(s) {
       <div class="composer-bar">
         <select class="chat-model" aria-label="Model">${models.map(m => `<option value="${esc(m.id)}" ${m.id === current ? 'selected' : ''}>${esc(m.label)} · ${esc(m.note)}</option>`).join('')}</select>
         ${s.messages.length ? '<button type="button" class="ghost small" data-chat-reset>New</button>' : ''}
-        <button class="primary send" type="submit" ${s.streaming ? 'disabled' : ''}>Send <kbd>⏎</kbd></button>
+        <button class="primary send" type="submit" ${s.streaming ? 'disabled' : ''}>Send <kbd>enter</kbd></button>
       </div>
     </form></div>`;
 }

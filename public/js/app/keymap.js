@@ -72,8 +72,8 @@ export const KEYMAP = [
   ['ask.new', 'Ask', 'New chat', ['N']]
 ];
 const FIXED_KEYS = [
-  ['Library', '← ↑ ↓ →  h j k l', 'Move between cards'], ['Library', '⏎  o', 'Open the focused card'],
-  ['Taxonomy', '↑ ↓', 'Move between concepts'], ['Ask', '⇧ ⏎', 'New line in a message'], ['Anywhere', 'esc', 'Close or step back']
+  ['Library', '← ↑ ↓ →  h j k l', 'Move between cards'], ['Library', 'enter  o', 'Open the focused card'],
+  ['Taxonomy', '↑ ↓', 'Move between concepts'], ['Ask', 'shift enter', 'New line in a message'], ['Anywhere', 'esc', 'Close or step back']
 ];
 export const keyDef = new Map(KEYMAP.map(k => [k[0], k]));
 export const bindingsOf = (id) => prefs.keys?.[id] || keyDef.get(id)?.[3] || [];
@@ -92,11 +92,14 @@ export function comboOf(ev) {
   } else if (ev.shiftKey) mods.push('Shift');
   return [...mods, key].join('+');
 }
-const CAP = { Mod: isMac ? '⌘' : 'Ctrl', Shift: '⇧', Alt: isMac ? '⌥' : 'Alt', Enter: '⏎', Escape: 'esc', ArrowDown: '↓', ArrowUp: '↑', ArrowLeft: '←', ArrowRight: '→', Space: 'space', Backspace: '⌫', Tab: 'tab' };
+// Keys by name. Modifier symbols (⇧ ⌥ ⏎ ⌫) aren't in the site's fonts and many systems lack them,
+// so they're spelled out; ⌘ stays on Macs, which always have it.
+const CAP = { Mod: isMac ? '⌘' : 'ctrl', Shift: 'shift', Alt: isMac ? 'opt' : 'alt', Enter: 'enter', Escape: 'esc', ArrowDown: '↓', ArrowUp: '↑', ArrowLeft: '←', ArrowRight: '→', Space: 'space', Backspace: 'backspace', Tab: 'tab' };
 export const capsOf = (binding) => binding.split(' ').map(step => step.split('+').map(p => `<kbd>${esc(CAP[p] || (p.length === 1 ? (step.includes('Shift') ? p : p.toLowerCase()) : p))}</kbd>`).join('')).join('');
 // keyHint(actionId) shows the current bindings; keyHint("a b  c") keeps the old literal form.
 // A binding as plain text, for tooltips.
-export const capsText = (id) => bindingsOf(id).map(b => b.split(' ').map(step => step.split('+').map(p => CAP[p] || (p.length === 1 ? p.toLowerCase() : p)).join('')).join(' ')).join(' / ');
+// "Shift+A", "Ctrl+K", "⌘K", "G then L".
+export const capsText = (id) => bindingsOf(id).map(b => b.split(' ').map(step => { const parts = step.split('+').map(p => CAP[p] ? CAP[p].replace(/^\w/, c => c.toUpperCase()) : p.length === 1 ? (step.includes('Shift') ? p : p.toUpperCase()) : p); return parts.join(parts.some(p => p.length > 1) ? '+' : ''); }).join(' then ')).join(' or ');
 export const keyHint = (k) => keyDef.has(k)
   ? bindingsOf(k).map(capsOf).join('<span class="key-or">or</span>')
   : k.trim().split(/\s{2,}/).map(g => g.split(' ').filter(Boolean).map(x => `<kbd>${esc(x)}</kbd>`).join('')).join('<span class="key-or">or</span>');

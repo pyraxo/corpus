@@ -57,7 +57,7 @@ export function mountDoc(el, r, h) {
   const cleanups = [];
   el.classList.add(kind === 'pdf' ? 'pdf' : 'chapters');
   el.innerHTML = `<div class="doc-bar">
-      <button class="doc-btn" data-doc-contents aria-expanded="false" title="Contents and notes (⇧C)"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 4h10M3 8h10M3 12h6"/></svg>Contents</button>
+      <button class="doc-btn" data-doc-contents aria-expanded="false" title="Contents and notes (Shift+C)"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 4h10M3 8h10M3 12h6"/></svg>Contents</button>
       <span class="doc-where" aria-live="polite"></span>
       ${kind === 'pdf' ? '<span class="doc-zoom"><button class="doc-btn icon" data-doc-zoom="-1" aria-label="Zoom out">−</button><span class="doc-zoom-v">100%</span><button class="doc-btn icon" data-doc-zoom="1" aria-label="Zoom in">+</button></span>' : ''}
       <span class="doc-steps"><button class="doc-btn icon" data-doc-step="-1" aria-label="${kind === 'pdf' ? 'Previous page' : 'Previous chapter'}" title="${kind === 'pdf' ? 'Previous page' : 'Previous chapter'} ([)">‹</button><button class="doc-btn icon" data-doc-step="1" aria-label="${kind === 'pdf' ? 'Next page' : 'Next chapter'}" title="${kind === 'pdf' ? 'Next page' : 'Next chapter'} (])">›</button></span>

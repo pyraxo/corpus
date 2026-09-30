@@ -90,7 +90,7 @@ function paletteItems(qRaw) {
   out.push(...hits.slice(0, 8).map(([r]) => bookmarkItem(r, 'Bookmarks')));
   const concepts = scored(store.concepts.filter(c => ['topic', 'kind', 'format', 'label'].includes(c.facet)), c => `${c.label} ${c.parent ? label(c.parent) : ''}`).slice(0, 5);
   out.push(...concepts.map(c => ({ group: 'Filter by', label: c.parent ? `${label(c.parent)} / ${c.label}` : c.label, hint: c.facet, run: () => { closeReader(); ui.filters = new Set([c.id]); ui.query = ''; $('#search').value = ''; ui.visible = PAGE; navigate(`/?t=${encodeURIComponent(c.id)}`); } })));
-  out.push({ group: 'Ask', label: `Ask Corpus: “${qRaw.trim()}”`, hint: '⏎', run: async () => { closeReader(); const s = session('corpus', { scope: 'corpus' }); if (!s.streaming) { s.messages = []; s.conversationId = null; } navigate('/ask'); await sendChat(s, qRaw); } });
+  out.push({ group: 'Ask', label: `Ask Corpus: “${qRaw.trim()}”`, hint: 'enter', run: async () => { closeReader(); const s = session('corpus', { scope: 'corpus' }); if (!s.streaming) { s.messages = []; s.conversationId = null; } navigate('/ask'); await sendChat(s, qRaw); } });
   out.push({ group: 'Ask', label: `Search the library for “${qRaw.trim()}”`, run: () => { closeReader(); ui.query = qRaw.trim(); $('#search').value = ui.query; ui.visible = PAGE; navigate(`/?q=${encodeURIComponent(ui.query)}`); } });
   return out;
 }
@@ -100,7 +100,7 @@ function bookmarkItem(r, group) {
 export function openPalette() {
   let el = $('#palette');
   if (!el) {
-    document.body.insertAdjacentHTML('beforeend', `<div id="palette" class="overlay palette" hidden><div class="overlay-scrim" data-pclose></div><div class="palette-box" role="dialog" aria-label="Command palette"><div class="palette-input"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5 14 14"/></svg><input id="palette-input" placeholder="Search bookmarks, jump to a page, run an action…" autocomplete="off" spellcheck="false" role="combobox" aria-controls="palette-list"><kbd>esc</kbd></div><div id="palette-list" class="palette-list" role="listbox"></div><div class="palette-foot"><span>${keyHint('↑ ↓')} navigate</span><span>${keyHint('⏎')} open</span><span>${keyHint('?')} all shortcuts</span></div></div></div>`);
+    document.body.insertAdjacentHTML('beforeend', `<div id="palette" class="overlay palette" hidden><div class="overlay-scrim" data-pclose></div><div class="palette-box" role="dialog" aria-label="Command palette"><div class="palette-input"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5 14 14"/></svg><input id="palette-input" placeholder="Search bookmarks, jump to a page, run an action…" autocomplete="off" spellcheck="false" role="combobox" aria-controls="palette-list"><kbd>esc</kbd></div><div id="palette-list" class="palette-list" role="listbox"></div><div class="palette-foot"><span>${keyHint('↑ ↓')} navigate</span><span>${keyHint('enter')} open</span><span>${keyHint('?')} all shortcuts</span></div></div></div>`);
     el = $('#palette');
   }
   palette.open = true;
