@@ -12,8 +12,8 @@ node_modules/
 x-cookies.env
 
 # Personal data: the index, caches, overrides, chats, skills, saved pages
-data/
-public/data/
+/data/
+/public/data/
 dist/
 
 # Tunnel credentials and configs (see .cloudflared/.gitignore)
