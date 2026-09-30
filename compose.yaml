@@ -21,14 +21,3 @@ services:
       interval: 30s
       timeout: 5s
       retries: 3
-
-  cloudflared:
-    image: cloudflare/cloudflared:latest
-    restart: unless-stopped
-    depends_on:
-      corpus:
-        condition: service_healthy
-    command: tunnel --config /etc/cloudflared/config.yml run
-    volumes:
-      - ./.cloudflared/config.yml:/etc/cloudflared/config.yml:ro
-      - ./.cloudflared/credentials.json:/etc/cloudflared/credentials.json:ro

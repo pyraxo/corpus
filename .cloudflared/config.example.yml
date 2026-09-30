@@ -1,9 +1,0 @@
-# Copy to config.yml (ignored) and fill in your named tunnel.
-# `cloudflared tunnel create corpus` writes the credentials JSON next to it (also ignored).
-tunnel: <TUNNEL-UUID>
-credentials-file: /etc/cloudflared/credentials.json
-
-ingress:
-  - hostname: corpus.example.com
-    service: http://corpus:4173
-  - service: http_status:404
