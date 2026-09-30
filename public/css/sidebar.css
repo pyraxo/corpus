@@ -42,11 +42,10 @@
 .side-split { flex: none; height: 9px; position: relative; cursor: row-resize; touch-action: none; border-top: 1px solid var(--rule); }
 .side-split::after { content: ''; position: absolute; left: 50%; top: 3px; width: 36px; height: 3px; margin-left: -18px; border-radius: 2px; background: var(--rule-2); transition: background 0.12s; }
 .side-split:hover::after, .side-split.active::after { background: var(--accent); }
-.side-resize { position: absolute; left: -5px; top: 0; bottom: 0; width: 9px; z-index: 3; cursor: col-resize; touch-action: none; }
-.side-resize:hover, .side-resize.active { background: linear-gradient(to right, transparent 4px, var(--accent) 4px, var(--accent) 6px, transparent 6px); }
+
 @media (max-width: 860px) {
   .triage-chat.side-dock { position: fixed; width: auto; }
-  .side-resize { display: none; }
+
   .side-split { height: 14px; }
   .side-split::after { top: 5px; }
 }

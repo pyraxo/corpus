@@ -1,5 +1,4 @@
 // Routes (the address picks the view), rendering the current view, and picking up rebuilds.
-import { resizeTimer } from './shortcuts.js';
 import { $, $$, fmt } from '../core/dom.js';
 import { applyPrefs, prefs } from '../core/prefs.js';
 import { store, ui } from '../core/state.js';
@@ -58,6 +57,7 @@ export async function poll() {
 }
 
 // Listeners this module needs; main.js installs them once, in the order the app has always had.
+let resizeTimer = 0;
 export function setupRouter() {
   window.addEventListener('popstate', route);
   window.addEventListener('resize', () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(() => { if (ui.view === 'library' && prefs.layout === 'wall') { const box = $('#results'); const cols = Math.max(1, Math.min(5, Math.floor(((box?.clientWidth || 0) + 20) / 300))); if (box?._cols?.length !== cols) paintResults([], true); } }, 150); });

@@ -15,6 +15,7 @@ import { setupHighlights } from './features/highlights.js';
 import { setupMediaArchive } from './features/media-archive.js';
 import { loadPad, pad, setupScratchpad } from './features/scratchpad.js';
 import { setupSidebar } from './features/sidebar.js';
+import { setupPanes } from './ui/panes.js';
 import { setupUploads } from './features/uploads.js';
 import { inQueue } from './views/dialog.js';
 
@@ -22,6 +23,7 @@ import { inQueue } from './views/dialog.js';
 setupHighlights();
 setupScratchpad();
 setupSidebar();
+setupPanes();
 setupMediaArchive();
 setupUploads();
 setupEvents();

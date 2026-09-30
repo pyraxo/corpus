@@ -82,3 +82,12 @@ kbd { font: 500 10px/1 var(--mono); color: var(--ink-3); border: 1px solid var(-
 }
 .inbox-empty .grip { display: none; }
 [data-theme='dark'] .pdf-page canvas { filter: none; }
+/* Sidebar edges: drag to resize, double-click for the default (ui/panes.js). */
+.pane-edge { z-index: 12; width: 9px; cursor: col-resize; touch-action: none; }
+.pane-edge:hover, .pane-edge.active { background: linear-gradient(to right, transparent 4px, var(--accent) 4px, var(--accent) 5.5px, transparent 5.5px); }
+.pane-edge[data-pane='queue'], .pane-edge[data-pane='rail'] { position: fixed; top: var(--head); bottom: 0; }
+.pane-edge[data-pane='queue'] { left: calc(var(--queue-w, 380px) - 5px); }
+.pane-edge[data-pane='rail'] { left: calc(var(--rail-w, 232px) - 5px); }
+.pane-edge[data-pane='side'] { position: absolute; left: -5px; top: 0; bottom: 0; }
+body.resizing { cursor: col-resize; user-select: none; }
+@media (max-width: 860px) { .pane-edge { display: none; } }

@@ -1,5 +1,6 @@
 // The library: filters rail, the stack, and the wall, grid and list of bookmarks.
 import { capsText } from '../app/keymap.js';
+import { paneEdge } from '../ui/panes.js';
 import { $, $$, esc, num } from '../core/dom.js';
 import { prefs, savePrefs } from '../core/prefs.js';
 import { PAGE, store, ui, view } from '../core/state.js';
@@ -15,7 +16,7 @@ export function renderLibrary() {
   view().className = 'view library';
   view().innerHTML = `
     <div class="rail-scrim ${ui.mobileRail ? 'open' : ''}" data-rail-close></div>
-    <aside class="rail ${ui.mobileRail ? 'open' : ''}" aria-label="Filters">${renderRail()}</aside>
+    <aside class="rail ${ui.mobileRail ? 'open' : ''}" aria-label="Filters">${renderRail()}</aside>${paneEdge('rail', 'the filters')}
     <section class="stage">
       ${ui.status === 'active' && !ui.query && !ui.filters.size ? stackHtml() : ''}
       <div class="toolbar">

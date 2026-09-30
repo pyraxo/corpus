@@ -15,6 +15,7 @@ import { toast } from '../../ui/toast.js';
 import { captureNow } from '../dialog.js';
 import { afterPaint, fitScratchpads, readerContent, tagEditor } from '../post.js';
 import { queueRowH, ensureQueueVisible, handleQueueScroll, inboxBase, inboxControls, inboxQueue, renderQueueRows } from './queue.js';
+import { paneEdge } from '../../ui/panes.js';
 
 // Triage (/inbox): the untriaged queue; keep, archive or delete each one and move on.
 // Read (/read/<id>): the list you opened a bookmark from; read, tag, highlight and annotate,
@@ -74,7 +75,7 @@ export function renderInbox() {
       ${dockBar(current, reading, idx, queue.length)}
       </div>
       </div>${sideDock(current)}` : `<div class="inbox-empty"><p class="serif">${reading ? 'Nothing to read here.' : 'Nothing to triage here.'}</p>${reading ? '<a class="ghost" href="/" data-link>Back to the library</a>' : '<button class="ghost" data-inbox-clear>Reset filters</button>'}</div>${sideDock(null)}`;
-  view().innerHTML = `<aside class="queue" aria-label="Queue">${head}${list}</aside><section class="triage ${sideDock(current) ? 'with-chat' : ''}">${main}</section>`;
+  view().innerHTML = `<aside class="queue" aria-label="Queue">${head}${list}</aside>${paneEdge('queue', 'the list')}<section class="triage ${sideDock(current) ? 'with-chat' : ''}">${main}</section>`;
   if (ui.inboxPad && (!pad.loaded || Date.now() - pad.fetchedAt > 10_000)) loadPad();
   if (current) {
     fitScratchpads($('.triage-dock'));

@@ -1,5 +1,5 @@
 /* The reader view: the queue, the post pane and the dock (Triage and Read). */
-.inbox { display: grid; grid-template-columns: 380px minmax(0, 1fr); }
+.inbox { display: grid; grid-template-columns: var(--queue-w, 380px) minmax(0, 1fr); }
 .queue { position: sticky; top: var(--head); height: calc(100vh - var(--head)); overflow-y: auto; border-right: 1px solid var(--rule); }
 /* z-index needed since the queue rows below are position:absolute (for virtualization) and,
    being later in the DOM, would otherwise paint over this sticky header while scrolling. */

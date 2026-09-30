@@ -78,7 +78,6 @@ export function startRecording(id) {
   recordingKey = { id, first: null, timer: null };
   renderSettings();
 }
-export let resizeTimer;
 
 // Listeners this module needs; main.js installs them once, in the order the app has always had.
 export function setupShortcuts() {

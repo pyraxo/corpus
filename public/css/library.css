@@ -1,5 +1,5 @@
 /* The library: filters rail, toolbar, the stack, and wall, grid and list cards. */
-.library { display: grid; grid-template-columns: 232px minmax(0, 1fr); }
+.library { display: grid; grid-template-columns: var(--rail-w, 232px) minmax(0, 1fr); }
 .rail { position: sticky; top: var(--head); align-self: start; height: calc(100vh - var(--head)); overflow-y: auto; padding: 20px 12px 40px 20px; border-right: 1px solid var(--rule); scrollbar-width: thin; }
 .rail-group { margin-bottom: 22px; }
 .rail-group h4, .r-section h4, .s-group h4, .t-samples h4 { margin: 0 0 8px; font: 500 10px/1 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-3); }

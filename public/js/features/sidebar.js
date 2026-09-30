@@ -1,4 +1,5 @@
 // The reader's sidebar: Ask AI and the scratchpad, swapped, split and widened by dragging.
+import { paneEdge } from '../ui/panes.js';
 import { $, $$ } from '../core/dom.js';
 import { prefs, savePrefs } from '../core/prefs.js';
 import { ui } from '../core/state.js';
@@ -13,9 +14,9 @@ export function sideDock(current) {
   const panels = sideOrder().filter(p => p === 'chat' ? ui.inboxChat && current : ui.inboxPad);
   if (!panels.length) return '';
   const html = { chat: () => inboxChatHtml(current), pad: () => inboxPadHtml({ canAsk: !!current }) };
-  const style = `${prefs.sideWidth ? `--side-w:${prefs.sideWidth}px;` : ''}--split:${clampSplit(prefs.sideSplit)}`;
+  const style = `--split:${clampSplit(prefs.sideSplit)}`;
   return `<aside class="triage-chat side-dock ${panels.length > 1 ? 'both' : ''}" style="${style}" aria-label="Sidebar">
-    <div class="side-resize" data-side-resize title="Drag to resize"></div>
+    ${paneEdge('side', 'the sidebar')}
     ${panels.map(p => html[p]()).join('<div class="side-split" data-side-split role="separator" aria-orientation="horizontal" title="Drag to resize · double-click to share evenly"></div>')}
   </aside>`;
 }
@@ -62,16 +63,6 @@ function startSplitDrag(ev, bar) {
     dock.style.setProperty('--split', clampSplit((e.clientY - r.top) / r.height));
   }, () => { bar.classList.remove('active'); savePrefs({ sideSplit: clampSplit(dock.style.getPropertyValue('--split')) }); });
 }
-function startWidthDrag(ev, edge) {
-  const dock = edge.closest('.side-dock');
-  const right = dock.getBoundingClientRect().right;
-  edge.classList.add('active');
-  let w = dock.offsetWidth;
-  dragWith(ev, edge, (e) => {
-    w = Math.round(Math.min(Math.max(300, right - e.clientX), Math.max(320, innerWidth - 560)));
-    dock.style.setProperty('--side-w', `${w}px`);
-  }, () => { edge.classList.remove('active'); savePrefs({ sideWidth: w }); });
-}
 
 // Listeners this module needs; main.js installs them once, in the order the app has always had.
 export function setupSidebar() {
@@ -79,8 +70,6 @@ export function setupSidebar() {
     if (ev.button > 0) return;
     const split = ev.target.closest('[data-side-split]');
     if (split) return startSplitDrag(ev, split);
-    const edge = ev.target.closest('[data-side-resize]');
-    if (edge) return startWidthDrag(ev, edge);
     const head = ev.target.closest('.side-dock .tc-head');
     if (head && !ev.target.closest('button, select, input, a')) startPanelDrag(ev, head.closest('.side-panel'));
   });
