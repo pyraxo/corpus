@@ -76,7 +76,7 @@ Secrets go in the ignored `.env` (`TYPESAFE_API_KEY`, `OPENROUTER_API_KEY`, `COR
 
 Opening a bookmark takes you to the reader: the list you opened it from on the left, the post (or book, or PDF) in the middle, your tags and scratchpad below it, and Ask AI and the inbox scratchpad in the sidebar. It has two modes, switched at the top of the list:
 
-- **Read** (`/read/<id>`) goes through the list you came from: the library as searched and filtered, the stack, your highlights, or the inbox. Read, retag, highlight and add notes, mark it read (`d`) or stack it (`s`), then go to the next (`j`). Keep and archive are there too, but nothing moves you on. **Read these** in the library toolbar starts at the top of what the library is showing.
+- **Read** (`/read/<id>`) goes through the list you came from: the library as searched and filtered, the stack, your highlights, or the inbox. Read, retag, highlight and add notes, mark it read (`d`) or stack it (`s`), then go to the next (`j`). Keep and archive are there too, but nothing moves you on. **Open in Reader** in the library toolbar starts at the top of what the library is showing.
 - **Triage** (`/inbox`) is the inbox: untriaged bookmarks, each kept, archived or deleted, and on to the next.
 
 To open bookmarks in a dialog over the library instead, set Settings → Library & inbox → **Open bookmarks in** to **Dialog**. Citations in Ask always open in the dialog, so the conversation stays put.

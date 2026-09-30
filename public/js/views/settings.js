@@ -99,11 +99,13 @@ export function renderSettings() {
   const title = SETTINGS_SECTIONS.find(([id]) => id === section)[1];
   view().className = 'view settings';
   view().innerHTML = `
+    <div class="page-head"><h1 class="serif">Settings</h1></div>
+    <div class="s-layout">
     <aside class="s-nav" aria-label="Settings sections">
-      <h1 class="serif">Settings</h1>
       <nav>${SETTINGS_SECTIONS.map(([id, l]) => `<a href="/settings/${id}" data-link aria-current="${id === section ? 'page' : 'false'}">${esc(l)}${id === 'skills' && cachedSkills ? `<span class="n">${cachedSkills.length}</span>` : ''}</a>`).join('')}</nav>
     </aside>
-    <section class="s-main"><h2 class="s-title">${esc(title)}</h2>${bodies[section]()}</section>`;
+    <section class="s-main"><h2 class="s-title">${esc(title)}</h2>${bodies[section]()}</section>
+    </div>`;
   // On phones the sections are a scrolling tab row: keep the current one in view.
   const nav = $('.s-nav nav'), cur = $('.s-nav a[aria-current="page"]');
   if (nav && cur && nav.scrollWidth > nav.clientWidth) nav.scrollLeft = cur.offsetLeft - (nav.clientWidth - cur.offsetWidth) / 2;

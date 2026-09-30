@@ -1,12 +1,12 @@
-/* Pages: taxonomy and settings. */
-.taxonomy, .settings { padding: 36px 28px 80px; max-width: 1180px; margin: 0 auto; }
+/* Pages: highlights, taxonomy and settings share one frame and one title. */
+.highlights, .taxonomy, .settings { padding: 36px 28px 80px; max-width: 1120px; margin: 0 auto; }
 /* align-items: start keeps the sidebar's own box short (content-sized) — its sticky containing
    block is still the full tall grid area regardless, so it sticks the whole way down, detaching
    only in the last ~box-height of scroll (normal, expected sticky-sidebar behavior). A stretched
    box (the previous attempt here) makes the box as tall as the containing block, leaving sticky
    zero room to move — it then just tracks the scroll instead of holding in place at all. */
-.settings { max-width: 1120px; display: grid; grid-template-columns: 176px minmax(0, 1fr); gap: 32px; align-items: start; }
-.page-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; margin-bottom: 20px; flex-wrap: wrap; }
+.s-layout { display: grid; grid-template-columns: 176px minmax(0, 1fr); gap: 32px; align-items: start; }
+.page-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; min-height: 48px; margin-bottom: 24px; flex-wrap: wrap; }
 .page-head h1 { margin: 0; font-size: 48px; line-height: 1; }
 .page-actions { display: flex; gap: 8px; }
 .tabs { display: flex; gap: 22px; border-bottom: 1px solid var(--rule); margin-bottom: 0; overflow-x: auto; }
@@ -53,22 +53,22 @@
   .t-row .t-id { display: none; }
 }
 @media (max-width: 860px) {
-  .taxonomy, .settings { padding: 24px 16px 60px; }
+  .highlights, .taxonomy, .settings { padding: 24px 16px 60px; }
   .page-head h1 { font-size: 38px; }
+  .page-head { min-height: 0; }
   .s-row { flex-direction: column; align-items: flex-start; gap: 10px; }
 }
 .t-row:focus-visible { outline: none; }
 .key-or { margin: 0 4px; font-size: 10px; color: var(--ink-3); }
 .s-row code { font: 11.5px var(--mono); background: var(--sunk); padding: 1px 5px; border-radius: 4px; overflow-wrap: anywhere; }
 .s-nav { position: sticky; top: calc(var(--head) + 28px); display: grid; gap: 18px; }
-.s-nav h1 { margin: 0; font-size: 40px; line-height: 1; }
 .s-nav nav { display: grid; gap: 2px; }
 .s-nav a { display: flex; justify-content: space-between; align-items: center; padding: 7px 10px; border-radius: 8px; text-decoration: none; color: var(--ink-2); font-size: 13.5px; }
 .s-nav a:hover { background: var(--sunk); color: var(--ink); }
 .s-nav a[aria-current='page'] { background: var(--sunk); color: var(--ink); font-weight: 500; box-shadow: inset 2px 0 0 var(--accent); }
 .s-nav .n { font: 10.5px var(--mono); color: var(--ink-3); }
 .s-main { min-width: 0; }
-.s-main .s-title { margin: 6px 0 4px; font: 400 30px/1.1 var(--serif); }
+.s-main .s-title { margin: 0 0 4px; font: 400 30px/1.1 var(--serif); }
 .s-main .s-group:first-of-type { margin-top: 18px; }
 .s-main .s-group > h4:first-child { margin-top: 0; }
 .s-lede { margin: 8px 0 18px; color: var(--ink-3); font-size: 13.5px; max-width: 620px; }
@@ -86,9 +86,8 @@
 .skill-form textarea { font: 13px/1.6 var(--mono); min-height: 260px; }
 .skill-form input[readonly] { color: var(--ink-3); font-family: var(--mono); }
 @media (max-width: 860px) {
-  .settings { display: block; }
+  .s-layout { display: block; }
   .s-nav { position: sticky; top: var(--head); z-index: 6; gap: 10px; margin: 0 -16px; padding: 12px 16px 0; background: var(--bg); border-bottom: 1px solid var(--rule); }
-  .s-nav h1 { font-size: 30px; }
   .s-nav nav { display: flex; gap: 2px; overflow-x: auto; scrollbar-width: none; margin: 0 -4px; }
   .s-nav nav::-webkit-scrollbar { display: none; }
   .s-nav a { flex: none; border-radius: 0; padding: 10px 8px; border-bottom: 2px solid transparent; background: none !important; box-shadow: none !important; }

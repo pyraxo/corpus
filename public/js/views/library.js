@@ -25,7 +25,7 @@ export function renderLibrary() {
         </div>
         <div class="toolbar-right">
           <button class="ghost add-files" data-add-files title="Add images, PDFs, books or text. You can also drop or paste them anywhere."><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3v10M3 8h10"/></svg><span>Add files</span></button>
-          ${results.length ? `<button class="ghost read-these" data-read-all title="Go through these one by one in the reader">Read these</button>` : ''}
+          ${results.length ? `<button class="ghost read-these" data-read-all title="Go through these one by one in the Reader"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 4.2C6.6 3.2 4.7 2.8 2.5 3v9.3c2.2-.2 4.1.2 5.5 1.2 1.4-1 3.3-1.4 5.5-1.2V3c-2.2-.2-4.1.2-5.5 1.2zM8 4.2v9.3"/></svg><span>Open in Reader</span></button>` : ''}
           <button class="ghost rail-toggle" data-rail aria-expanded="${ui.mobileRail}"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 4h11M4.5 8h7M6.5 12h3"/></svg>Filter${ui.filters.size ? `<span class="badge">${ui.filters.size}</span>` : ''}</button>
           <select id="sort" aria-label="Sort">${SORTS.map(([v, l]) => `<option value="${v}" ${prefs.sort === v ? 'selected' : ''}>${l}</option>`).join('')}</select>
           <div class="segmented" role="group" aria-label="Layout">${[['wall', 'Wall'], ['grid', 'Grid'], ['list', 'List']].map(([v, l]) => `<button data-layout="${v}" aria-pressed="${prefs.layout === v}">${l}</button>`).join('')}</div>

@@ -46,7 +46,7 @@ function commands() {
     { group: 'Actions', label: undoStack.length ? `Undo: ${undoStack.at(-1).label}` : 'Undo', hint: 'undo', run: undo },
     { group: 'Actions', label: redoStack.length ? `Redo: ${redoStack.at(-1).label}` : 'Redo', hint: 'redo', run: redo },
     { group: 'Actions', label: 'Add files: images, PDFs, EPUB or MOBI books, text', run: () => pickFiles() },
-    { group: 'Actions', label: 'Read through the library as it’s filtered now', run: () => { closeReader(); const list = sortRecords(query(), prefs.sort); if (list[0]) { const was = prefs.openIn; prefs.openIn = 'reader'; openBookmark(list[0].id, list, libraryLabel()); prefs.openIn = was; } } },
+    { group: 'Actions', label: 'Open in Reader: the library as it’s filtered now', run: () => { closeReader(); const list = sortRecords(query(), prefs.sort); if (list[0]) { const was = prefs.openIn; prefs.openIn = 'reader'; openBookmark(list[0].id, list, libraryLabel()); prefs.openIn = was; } } },
     { group: 'Actions', label: 'Triage the inbox', run: () => { closeReader(); navigate('/inbox'); } },
     { group: 'Actions', label: 'Open the inbox scratchpad', hint: 'inbox.pad', run: () => { closeReader(); ui.inboxPad = true; navigate('/inbox'); } },
     { group: 'Actions', label: 'New chat', run: () => { const s = session('corpus', { scope: 'corpus' }); if (!s.streaming) { s.messages = []; s.conversationId = null; } closeReader(); navigate('/ask'); } },

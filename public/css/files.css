@@ -7,7 +7,7 @@
 .suggestion:hover { border-color: var(--ink-3); color: var(--ink); }
 .drop-hint { position: absolute; left: 8px; right: 8px; top: 8px; height: calc(50% - 12px); z-index: 4; border: 2px dashed var(--accent); border-radius: 10px; background: color-mix(in srgb, var(--accent) 8%, transparent); pointer-events: none; }
 .drop-hint.bottom { top: auto; bottom: 8px; }
-.add-files svg { width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; }
+.add-files svg, .read-these svg { width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; }
 .avatar.file { border-radius: 3px; object-fit: cover; }
 .avatar.blank.file { border-radius: 4px; background: var(--ink); color: var(--bg); font: 600 9px var(--mono); }
 .tile-cover { display: grid; place-items: center; padding: 18px 18px 4px; background: var(--sunk); }
