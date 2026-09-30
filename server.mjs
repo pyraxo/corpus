@@ -23,6 +23,7 @@ import { handleMcp } from './lib/mcp.mjs';
 import { listSkills } from './lib/skills.mjs';
 import { Archiver, MEDIA_TYPES } from './lib/archive.mjs';
 import { readPad, writePad } from './lib/scratchpad.mjs';
+import { FILE_ID, FILE_TYPES, filePath, setCover } from './lib/files.mjs';
 import crypto from 'node:crypto';
 
 const port = Number(process.env.PORT || 4173);
@@ -32,14 +33,17 @@ const [checkH, checkM] = (process.env.SOURCE_CHECK_UTC || '23:30').split(':').ma
 const defaultIds = new Set(defaultConcepts().map(c => c.id));
 const log = (m) => console.log(`${new Date().toISOString()} ${m}`);
 
-const mime = { ...MEDIA_TYPES, '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.json': 'application/json; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon', '.webmanifest': 'application/manifest+json' };
+const mime = { ...FILE_TYPES, ...MEDIA_TYPES, '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.json': 'application/json; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon', '.webmanifest': 'application/manifest+json' };
 
 let lastBuild = null;
 let building = null;
 let sourceMtime = 0;
 
+let rebuildAgain = null;
 async function rebuild(reason) {
-  if (building) return building;
+  // A change made while a build is running (a new file, a tag) needs one more build after it;
+  // everyone who asks meanwhile shares that one.
+  if (building) return (rebuildAgain ||= building.catch(() => {}).then(() => { rebuildAgain = null; return rebuild(reason); }));
   building = (async () => {
     try {
       const result = await build({ log: (m) => log(`[build:${reason}] ${m}`) });
@@ -111,6 +115,14 @@ async function readBody(req) {
   return chunks.length ? JSON.parse(Buffer.concat(chunks).toString('utf8')) : {};
 }
 
+// A file upload's raw bytes (not JSON), up to UPLOAD_MAX_MB.
+const uploadMax = Number(process.env.UPLOAD_MAX_MB || 300) * 1e6;
+async function readRaw(req, max = uploadMax) {
+  let size = 0; const chunks = [];
+  for await (const c of req) { size += c.length; if (size > max) throw Object.assign(new Error(`Files are limited to ${Math.round(max / 1e6)} MB`), { status: 413 }); chunks.push(c); }
+  return Buffer.concat(chunks);
+}
+
 function originOf(req) {
   if (process.env.CORPUS_PUBLIC_URL) return process.env.CORPUS_PUBLIC_URL.replace(/\/+$/, '');
   const https = req.headers['x-forwarded-proto'] === 'https' || !!req.headers['cf-visitor']?.includes('https');
@@ -144,9 +156,9 @@ async function serveFile(req, res, file, cache) {
 }
 
 // Archived images (byte ranges too, for clients that ask).
-async function serveMedia(req, res, file) {
+async function serveMedia(req, res, file, extra = {}) {
   const { size } = await fs.stat(file);
-  const headers = { 'content-type': mime[path.extname(file)] || 'application/octet-stream', 'cache-control': 'private, max-age=31536000, immutable', 'accept-ranges': 'bytes' };
+  const headers = { 'content-type': mime[path.extname(file).toLowerCase()] || 'application/octet-stream', 'cache-control': 'private, max-age=31536000, immutable', 'accept-ranges': 'bytes', ...extra };
   const m = /^bytes=(\d*)-(\d*)$/.exec(req.headers.range || '');
   if (m && (m[1] || m[2])) {
     const start = m[1] ? Number(m[1]) : Math.max(0, size - Number(m[2]));
@@ -251,6 +263,22 @@ const server = http.createServer(async (req, res) => {
         if (!r) return send(res, 404, { ok: false });
         return send(res, 200, { ok: true, captured: r.enrichment === 'ok', ...archiver.recordStatus(r) });
       }
+      if (route === 'POST /api/files') {
+        // Dropped, pasted or picked files: images, PDFs, EPUB/MOBI books, text and Markdown.
+        const name = decodeURIComponent(String(req.headers['x-file-name'] || 'file')).slice(0, 300);
+        try { return send(res, 200, { ok: true, ...(await ops.ingest(await readRaw(req), name)) }); }
+        catch (e) { log(`[files] ${name}: ${e.message}`); return send(res, e.status || 400, { ok: false, error: e.message }); }
+      }
+      if (req.method === 'PUT' && /^\/api\/files\/[^/]+\/cover$/.test(url.pathname)) {
+        // PDF covers are drawn in the browser (the server has no canvas) and sent back here.
+        const id = url.pathname.split('/')[3];
+        const type = String(req.headers['content-type'] || '');
+        if (!FILE_ID.test(id) || !/^image\/(jpeg|png|webp)$/.test(type)) return send(res, 400, { ok: false });
+        const doc = await setCover(id, await readRaw(req, 8e6), { 'image/jpeg': '.jpg', 'image/png': '.png', 'image/webp': '.webp' }[type]);
+        if (!doc) return send(res, 404, { ok: false });
+        await rebuild('cover');
+        return send(res, 200, { ok: true, cover: `/files/${id}/${doc.cover}` });
+      }
       if (route === 'GET /api/keys') return send(res, 200, { keys: await keysStatus() });
       if (route === 'PUT /api/keys') {
         const { name, value } = await readBody(req);
@@ -351,7 +379,7 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === '/connect.md') { const body = await fs.readFile(path.join(paths.root || process.cwd(), 'docs', 'connect.md'), 'utf8'); return send(res, 200, body, { 'content-type': 'text/markdown; charset=utf-8', 'cache-control': 'public, max-age=300' }); }
     const publicAsset = ['/styles.css', '/manifest.webmanifest', '/sw.js', '/favicon.ico'].includes(url.pathname) || url.pathname.startsWith('/icons/');
     if (!isAuthed(req) && !publicAsset) {
-      if (url.pathname.startsWith('/data/') || url.pathname === '/media') return send(res, 401, { ok: false, error: 'Sign in required' });
+      if (url.pathname.startsWith('/data/') || url.pathname.startsWith('/files/') || url.pathname === '/media') return send(res, 401, { ok: false, error: 'Sign in required' });
       return await serveFile(req, res, path.join(paths.public, 'login.html'), 'no-store');
     }
     if (url.pathname === '/login') { res.writeHead(302, { location: '/' }); res.end(); return; }
@@ -364,6 +392,14 @@ const server = http.createServer(async (req, res) => {
       // The local copy of a post's image, used when X no longer serves it.
       const file = archiver.fileFor(url.searchParams.get('u') || '');
       return file ? await serveMedia(req, res, file) : send(res, 404, { ok: false, error: 'Not archived' });
+    }
+    if (url.pathname.startsWith('/files/')) {
+      // A file's original, cover, chapters and book images. Served sandboxed: nothing in them runs.
+      const [, , id, ...rest] = url.pathname.split('/');
+      const file = filePath(id, decodeURIComponent(rest.join('/')));
+      if (!file) return send(res, 404, { ok: false, error: 'Not found' });
+      const changes = /\/(doc\.json|cover\.\w+)$/.test(file);
+      return await serveMedia(req, res, file, { 'content-security-policy': "sandbox; default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'", 'x-content-type-options': 'nosniff', ...(changes && { 'cache-control': 'no-cache' }) });
     }
     if (url.pathname === '/favicon.ico') return await serveFile(req, res, path.join(paths.public, 'icons', 'favicon-32.png'), 'public, max-age=86400');
     const rel = url.pathname === '/' || !path.extname(url.pathname) ? '/index.html' : decodeURIComponent(url.pathname);

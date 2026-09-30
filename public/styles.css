@@ -257,7 +257,8 @@ textarea.field { height: auto; padding: 8px 10px; resize: vertical; line-height:
 @keyframes pulse { to { opacity: 0.25; } }
 .r-foot { margin-top: 32px; padding-top: 20px; border-top: 1px solid var(--rule); display: grid; gap: 20px; }
 .r-stats { display: flex; gap: 16px; font: 11px var(--mono); color: var(--ink-3); }
-.scratchpad { width: 100%; border: 1px solid var(--rule-2); border-radius: 8px; background: var(--surface); padding: 8px 10px; resize: vertical; outline: 0; font-size: 13px; line-height: 1.5; }
+/* Scratchpads grow with their text (fitScratchpad) between these bounds, then scroll. */
+.scratchpad { width: 100%; border: 1px solid var(--rule-2); border-radius: 8px; background: var(--surface); padding: 8px 10px; resize: vertical; outline: 0; font-size: 13px; line-height: 1.5; min-height: 110px; max-height: 60vh; overflow-y: auto; }
 .scratchpad:focus { border-color: var(--ink-3); }
 
 .tag-editor { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
@@ -300,8 +301,9 @@ textarea.field { height: auto; padding: 8px 10px; resize: vertical; line-height:
 .triage-dock { border-top: 1px solid var(--rule); background: var(--bg); }
 .dock-meta { display: grid; gap: 8px; padding: 12px 40px 0; }
 .triage-dock .suggest { top: auto; bottom: 32px; }
-.triage-dock .scratchpad { display: block; min-height: 34px; height: 34px; resize: none; transition: height 0.15s; }
-.triage-dock .scratchpad:focus { height: 76px; }
+.triage-dock .scratchpad { display: block; min-height: 34px; max-height: 180px; resize: none; transition: min-height 0.15s; }
+.triage-dock .scratchpad:not(:placeholder-shown) { min-height: 64px; }
+.triage-dock .scratchpad:focus { min-height: 96px; }
 .triage-bar { display: flex; gap: 8px; align-items: center; padding: 12px 40px 14px; background: var(--bg); }
 .triage-bar .muted { margin-left: auto; font-family: var(--mono); }
 .triage-bar .ask-ai[aria-pressed='true'] { background: var(--sunk); color: var(--ink); }
@@ -608,8 +610,9 @@ textarea.field { height: auto; padding: 8px 10px; resize: vertical; line-height:
   .triage-dock .tag { flex: none; height: 30px; }
   .triage-dock .tag-add input, .triage-dock .tag-add input:focus { width: 140px; height: 30px; font-size: 16px; }
   .triage-dock .suggest { position: fixed; left: 12px; right: 12px; top: auto; width: auto; z-index: 35; }
-  .triage-dock .scratchpad { font-size: 16px; min-height: 48px; height: 48px; }
-  .triage-dock .scratchpad:focus { height: 120px; }
+  .triage-dock .scratchpad { font-size: 16px; min-height: 48px; max-height: 220px; }
+  .triage-dock .scratchpad:not(:placeholder-shown) { min-height: 80px; }
+  .triage-dock .scratchpad:focus { min-height: 120px; }
   .triage-bar { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; padding: 10px 12px; }
   .triage-chat { position: fixed; top: var(--head); left: 0; right: 0; bottom: var(--nav); z-index: 25; width: auto; border-left: 0; }
   .triage-chat .composer textarea { font-size: 16px; }

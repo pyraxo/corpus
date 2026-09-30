@@ -610,6 +610,7 @@ function renderInbox() {
   view().innerHTML = `<aside class="queue" aria-label="Queue">${head}${list}</aside><section class="triage ${sideDock(current) ? 'with-chat' : ''}">${main}</section>`;
   if (ui.inboxPad && (!pad.loaded || Date.now() - pad.fetchedAt > 10_000)) loadPad();
   if (current) {
+    fitScratchpads($('.triage-dock'));
     markHighlights($('#triage-body'), current);
     captureNow(current);
     if (ui.inboxChat) loadInboxChat(current.id);
@@ -1201,7 +1202,7 @@ async function sendChat(s, text, { from } = {}) {
   }
   msg.at = new Date().toISOString();
   msg.streaming = false; s.streaming = false;
-  if (mutated) { await loadAll(); updateInboxCount(); for (const id of new Set([ui.readerId, s.bookmarkId])) { const r = id && store.byId.get(id); if (!r) continue; for (const box of $$(`[data-tags="${id}"]`)) box.innerHTML = tagEditor(r); for (const ta of $$(`[data-scratchpad="${id}"]`)) if (document.activeElement !== ta) ta.value = store.overrides[id]?.scratchpad || ''; } if (ui.inboxPad) loadPad(); toast('Library updated'); }
+  if (mutated) { await loadAll(); updateInboxCount(); for (const id of new Set([ui.readerId, s.bookmarkId])) { const r = id && store.byId.get(id); if (!r) continue; for (const box of $$(`[data-tags="${id}"]`)) box.innerHTML = tagEditor(r); for (const ta of $$(`[data-scratchpad="${id}"]`)) if (document.activeElement !== ta) { ta.value = store.overrides[id]?.scratchpad || ''; fitScratchpad(ta); } } if (ui.inboxPad) loadPad(); toast('Library updated'); }
   paintChat(s, { full: true });
   if (s.scope === 'corpus' && ui.view === 'ask') { loadChatList().then(renderAskSide); if (location.pathname !== `/ask/${s.conversationId}`) history.replaceState({}, '', `/ask/${s.conversationId}`); }
 }
@@ -1276,6 +1277,7 @@ async function showReaderTab(tab) {
   ui.readerTab = tab;
   $$('[data-rtab]').forEach(b => b.setAttribute('aria-pressed', b.dataset.rtab === tab));
   $('#reader-body').hidden = tab !== 'read';
+  if (tab === 'read') fitScratchpads($('#reader-body'));
   const box = $('#reader-chat');
   box.hidden = tab !== 'chat';
   if (tab !== 'chat') return;
@@ -1363,9 +1365,18 @@ function markHighlights(el, r) {
   if (root) for (const h of highlightsOf(r.id)) markOne(root, h);
 }
 // Everything that shows a post in the reader or the inbox goes through here.
+// A scratchpad is as tall as its text (CSS sets the minimum and maximum), so it reads in full.
+function fitScratchpad(ta) {
+  if (!ta.offsetParent) return; // hidden: measured when shown
+  ta.style.height = 'auto';
+  ta.style.height = `${ta.scrollHeight + ta.offsetHeight - ta.clientHeight}px`;
+}
+const fitScratchpads = (root = document) => $$('textarea[data-scratchpad]', root).forEach(fitScratchpad);
+
 function paintReader(el, r, opts) {
   if (!el) return;
   el.innerHTML = readerContent(r, opts);
+  requestAnimationFrame(() => fitScratchpads(el));
   markHighlights(el, r);
   archivedPosters(el);
   archiveStatus(r);
@@ -1930,6 +1941,7 @@ document.addEventListener('input', (ev) => {
     if (!list.hidden && t.closest('.triage-dock') && getComputedStyle(list).position === 'fixed') list.style.bottom = `${innerHeight - t.getBoundingClientRect().top + 6}px`;
     return;
   }
+  if (t.matches('textarea[data-scratchpad]')) { fitScratchpad(t); return; }
   if (t.matches('.composer textarea, .msg-edit textarea')) { t.style.height = 'auto'; t.style.height = `${Math.min(220, t.scrollHeight)}px`; }
 });
 
