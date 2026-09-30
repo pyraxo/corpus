@@ -65,20 +65,27 @@ export function readerContent(r, { docked = false } = {}) {
   const mediaBlock = (media = []) => showMedia && media.length ? `<div class="r-media n${Math.min(media.length, 4)}">${media.map(m => m.video && (m.type === 'video' || m.type === 'gif')
     ? `<video controls playsinline preload="none" poster="${esc(m.url)}" ${m.type === 'gif' ? 'loop muted autoplay' : ''} src="${esc(m.video)}"></video>`
     : `<a href="${esc(img(m.url, 'orig'))}" target="_blank" rel="noopener"><img src="${esc(img(m.url, 'medium'))}" alt="${esc(m.alt || m.description || '')}" loading="lazy" referrerpolicy="no-referrer"></a>`).join('')}</div>${isFile(r) && media[0]?.description ? `<p class="r-caption">${esc(media[0].description)}</p>` : ''}` : '';
-  const card = (c) => c && (c.title || c.image) ? `<a class="r-card" href="${esc(c.url || '#')}" target="_blank" rel="noopener noreferrer">${c.image ? `<img src="${esc(c.image)}" alt="" loading="lazy" referrerpolicy="no-referrer">` : ''}<span class="domain">${esc(c.domain || host(c.url))}</span><strong>${esc(c.title || '')}</strong>${c.description ? `<span class="desc">${esc(c.description)}</span>` : ''}</a>` : '';
+  // A link card; its address is the card's own or the first link of the part it's in. Without one
+  // it's shown but isn't a link (a bare "#" would just reload Corpus).
+  const card = (c, links = []) => {
+    if (!c || !(c.title || c.image)) return '';
+    const url = c.url || links.find(l => /^https?:\/\//.test(l) && !/^https?:\/\/(www\.)?(x|twitter)\.com\//.test(l));
+    const body = `${c.image ? `<img src="${esc(c.image)}" alt="" loading="lazy" referrerpolicy="no-referrer">` : ''}<span class="domain">${esc(c.domain || host(c.url))}</span><strong>${esc(c.title || '')}</strong>${c.description ? `<span class="desc">${esc(c.description)}</span>` : ''}`;
+    return url ? `<a class="r-card" href="${esc(url)}" target="_blank" rel="noopener noreferrer">${body}</a>` : `<div class="r-card">${body}</div>`;
+  };
   // A post's thread parts, article and link card; the quoted post is rendered the same way.
   const postBody = (p) => {
     const parts = p.thread || [{ id: p.id, text: p.text, media: p.media, links: p.links }];
     const focalIndex = p.focalIndex || 0;
     const article = p.article ? `<div class="r-article">${p.article.cover ? `<img class="r-cover" src="${esc(p.article.cover)}" alt="" referrerpolicy="no-referrer">` : ''}${articleBlocks(p.article.blocks)}</div>` : '';
-    return `${parts.map((t, i) => `<section class="r-part ${i === focalIndex && parts.length > 1 ? 'focal' : ''}">${parts.length > 1 ? `<span class="r-index">${String(i + 1).padStart(2, '0')}</span>` : ''}${p.article && i === 0 ? article : richText(i === focalIndex && p.card && !p.article ? stripCardUrl(t.text || '', p.card) : t.text)}${mediaBlock(t.media)}${i > 0 ? card(t.card) : ''}</section>`).join('')}
-      ${!p.article ? card(p.card) : ''}`;
+    return `${parts.map((t, i) => `<section class="r-part ${i === focalIndex && parts.length > 1 ? 'focal' : ''}">${parts.length > 1 ? `<span class="r-index">${String(i + 1).padStart(2, '0')}</span>` : ''}${p.article && i === 0 ? article : richText(i === focalIndex && p.card && !p.article ? stripCardUrl(t.text || '', p.card) : t.text)}${mediaBlock(t.media)}${i > 0 ? card(t.card, t.links) : ''}</section>`).join('')}
+      ${!p.article ? card(p.card, p.links) : ''}`;
   };
   const q = r.quoted;
   const quoted = q ? `<blockquote class="r-quote${q.thread || q.article ? ' full' : ''}"><div class="byline">${avatar(q.author || {})}<span class="name">${esc(q.author?.name || '')}</span><span class="handle">@${esc(q.author?.handle || '')}</span>${q.thread ? `<span class="q-kind">Thread · ${q.thread.length}</span>` : q.article ? '<span class="q-kind">Article</span>' : ''}${q.id ? `<a class="q-open" href="${esc(q.url || `https://x.com/i/status/${q.id}`)}" target="_blank" rel="noopener noreferrer">↗</a>` : ''}</div>${q.article?.title ? `<h2 class="r-title q-title">${esc(q.article.title)}</h2>` : ''}${postBody(q)}</blockquote>` : '';
   const pending = r.enrichment === 'pending';
   return `
-    <header class="r-head">${byline(r, false)}<div class="r-meta"><span>${fullDate(r.postedAt)}</span>${formatBadge(r)}${isFile(r) ? `<a href="${esc(r.url)}" target="_blank" rel="noopener" download="${esc(r.doc.name)}">Original file ↓</a>` : `<a href="${esc(r.url)}" target="_blank" rel="noopener noreferrer">Open ${r.provider === 'twitter' ? 'on X' : esc(host(r.url))} ↗</a>`}<button type="button" class="r-edit" data-edit-open="${esc(r.id)}" title="Edit (Shift+E)">Edit</button></div>
+    <header class="r-head">${byline(r, false)}<div class="r-meta"><span>${fullDate(r.postedAt)}</span>${formatBadge(r)}${isFile(r) ? `<a href="${esc(r.url)}" target="_blank" rel="noopener" download="${esc(r.doc.name)}">Original file ↓</a>` : `<a href="${esc(r.url)}" target="_blank" rel="noopener noreferrer">Open ${r.provider === 'twitter' ? 'on X' : esc(host(r.url))} ↗</a>`}<span class="r-tools"><button type="button" class="r-edit" data-share-open="${esc(r.id)}" title="Share or copy a link (Shift+S)">Share</button><button type="button" class="r-edit" data-edit-open="${esc(r.id)}" title="Edit (Shift+E)">Edit</button></span></div>
       ${readerMarks(r, { docked })}
       ${title ? `<h1 class="r-title">${esc(title)}</h1>` : ''}
       ${r.provider === 'web' && r.article ? articleByline(r.article, r.url, { open: false }) : ''}</header>
@@ -123,7 +130,7 @@ function docContent(r, { docked = false } = {}) {
       </div>
       ${d.description ? `<p class="doc-desc">${esc(d.description)}</p>` : ''}
       ${d.subjects?.length ? `<div class="doc-subjects">${d.subjects.slice(0, 10).map(x => `<span class="pill">${esc(x)}</span>`).join('')}</div>` : ''}
-      <div class="r-meta">${formatBadge(r)}<a href="${esc(r.url)}" target="_blank" rel="noopener" download="${esc(d.name)}">Original file ↓</a><button type="button" class="r-edit" data-edit-open="${esc(r.id)}" title="Edit (Shift+E)">Edit</button></div>
+      <div class="r-meta">${formatBadge(r)}<a href="${esc(r.url)}" target="_blank" rel="noopener" download="${esc(d.name)}">Original file ↓</a><span class="r-tools"><button type="button" class="r-edit" data-share-open="${esc(r.id)}" title="Share or copy a link (Shift+S)">Share</button><button type="button" class="r-edit" data-edit-open="${esc(r.id)}" title="Edit (Shift+E)">Edit</button></span></div>
       ${readerMarks(r, { docked })}
     </header>
     <div class="doc-mount" data-doc="${esc(r.id)}"></div>

@@ -3,7 +3,7 @@ import { hideHelp, keyHint, showHelp } from './keymap.js';
 import { installApp, isStandalone } from './pwa.js';
 import { navigate, render } from './router.js';
 import { toggleTheme } from './theme.js';
-import { $, $$, esc } from '../core/dom.js';
+import { $, $$, copyText, esc } from '../core/dom.js';
 import { prefs, savePrefs } from '../core/prefs.js';
 import { PAGE, store, ui } from '../core/state.js';
 import { redo, redoStack, undo, undoStack } from '../data/history.js';
@@ -40,7 +40,8 @@ function commands() {
       { group: 'This bookmark', label: store.overrides[r.id]?.stackedAt ? 'Take off the stack' : 'Add to stack', hint: 'reader.stack', run: () => toggleStack(r.id) },
       ...(store.overrides[r.id]?.deleted ? [] : [{ group: 'This bookmark', label: isRead(r) ? 'Mark unread' : 'Mark as read', hint: 'reader.done', run: () => toggleRead(r.id) }]),
       store.overrides[r.id]?.deleted ? { group: 'This bookmark', label: 'Restore from Trash', run: restoreReader } : { group: 'This bookmark', label: 'Move to Trash', hint: 'reader.delete', run: () => triageReader('deleted') },
-      { group: 'This bookmark', label: 'Copy link', run: () => { navigator.clipboard?.writeText(location.origin + `/b/${r.id}`); toast('Link copied'); } }
+      ...(r.provider !== 'file' ? [{ group: 'This bookmark', label: r.provider === 'web' ? 'Copy link to the page' : 'Copy link to the post on X', run: () => copyText(r.url) }] : []),
+      { group: 'This bookmark', label: 'Copy Corpus link', run: () => copyText(`${location.origin}/b/${r.id}`) }
     ] : []),
     go('Library', '/', 'go.library'), go('Inbox', '/inbox', 'go.inbox'), go('Highlights', '/highlights', 'go.highlights'), go('Ask', '/ask', 'go.ask'), go('Taxonomy', '/taxonomy', 'go.taxonomy'), go('Settings', '/settings', 'go.settings'), go('Archive', '/archive', 'go.archive'), go('Trash', '/trash', 'go.trash'),
     { group: 'Actions', label: undoStack.length ? `Undo: ${undoStack.at(-1).label}` : 'Undo', hint: 'undo', run: undo },

@@ -53,7 +53,7 @@ function titleFor(text, article, card) {
   return first || '';
 }
 
-const threadParts = (thread, focalId) => thread.map(t => ({ id: t.id, text: t.text, media: t.media, links: t.links, postedAt: t.postedAt, card: t.card || null, quoted: t.quoted && t.id !== focalId ? { author: t.quoted.author, text: t.quoted.text, media: t.quoted.media || [] } : null }));
+const threadParts = (thread, focalId) => thread.map(t => ({ id: t.id, text: t.text, media: t.media, links: t.links, postedAt: t.postedAt, card: withCardUrl(t.card, t.links), quoted: t.quoted && t.id !== focalId ? { author: t.quoted.author, text: t.quoted.text, media: t.quoted.media || [] } : null }));
 const withCardUrl = (card, links) => {
   const external = (links || []).filter(l => !isXLink(l));
   return card ? { ...card, url: card.url || external[0] || null, domain: card.domain || hostOf(external[0] || '') } : null;

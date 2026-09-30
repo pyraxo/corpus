@@ -129,7 +129,8 @@
 .r-linked-more { display: block; margin: 4px auto 0; height: 34px; padding: 0 16px; border: 1px solid var(--rule-2); border-radius: 999px; background: var(--surface); font-size: 13px; font-weight: 500; }
 .r-linked-more:hover { border-color: var(--ink-3); }
 /* Editing an entry: the header fields, then the article edited in place. */
-.r-edit { margin-left: auto; font: 11px var(--mono); color: var(--ink-3); }
+.r-tools { margin-left: auto; display: inline-flex; gap: 14px; }
+.r-edit { font: 11px var(--mono); color: var(--ink-3); }
 .r-edit:hover { color: var(--ink); }
 .edit-form { display: grid; gap: 16px; }
 .edit-bar { position: sticky; top: 0; z-index: 3; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 10px 0; background: color-mix(in srgb, var(--bg) 92%, transparent); backdrop-filter: blur(10px); border-bottom: 1px solid var(--rule); }
@@ -169,3 +170,8 @@
   .edit-bar { top: var(--head); }
   .edit-tools { top: calc(var(--head) + 96px); }
 }
+/* The Share menu: the links worth sending, and the device's share sheet. */
+.share-menu { position: fixed; z-index: 85; display: grid; min-width: 260px; max-width: calc(100vw - 16px); padding: 4px; background: var(--surface); border: 1px solid var(--rule-2); border-radius: 10px; box-shadow: var(--shadow); }
+.share-menu button { display: grid; gap: 1px; padding: 8px 10px; border-radius: 7px; text-align: left; font-size: 13px; }
+.share-menu button:hover, .share-menu button:focus-visible { background: var(--sunk); outline: 0; }
+.share-url { font: 10.5px var(--mono); color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

@@ -102,6 +102,10 @@ Each file lands in the inbox and the library with a title page: cover, title, au
 
 **Highlights and notes.** Select text in a post, a chapter or a PDF page and choose **Highlight** (`h`) or **Add note**. Click a highlight to copy it, add or edit its note, or remove it. A book's or PDF's highlights and notes are also under **Contents → Highlights & notes** (`⇧C`), and opening one from the Highlights page goes to its chapter or page.
 
+## Sharing
+
+**Share** in a post's header (or `Shift+S`) copies a link: to the post on X (or the page, for a saved link), to the page a post links to, or to the bookmark in Corpus (`/b/<id>`, which anyone signed in to your Corpus can open). Where the device has a share sheet (phones, the installed app), **Share…** opens it with the original link.
+
 ## Editing entries
 
 **Edit** in a post's header (or `Shift+E`, in the reader or the dialog) edits it in place:
