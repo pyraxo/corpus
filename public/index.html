@@ -34,7 +34,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&family=Instrument+Serif:ital@0;1&family=Hedvig+Letters+Serif:opsz@12..24&display=swap" />
-  <link rel="stylesheet" href="/styles.css?v=31" />
+  <link rel="stylesheet" href="/styles.css?v=32" />
   <script>
     try { const t = JSON.parse(window.localStorage.getItem('corpus.prefs') || '{}').theme; if (t && t !== 'system') document.documentElement.dataset.theme = t; } catch {}
   </script>
@@ -53,6 +53,7 @@
     <label class="search" id="search-wrap">
       <svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5 14 14"/></svg>
       <input id="search" type="search" placeholder="Search" autocomplete="off" spellcheck="false" />
+      <button type="button" class="search-clear" data-search-clear aria-label="Clear search" title="Clear search">×</button>
       <kbd>/</kbd>
     </label>
     <button class="mobile-search-trigger" data-mobile-search aria-label="Search"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5 14 14"/></svg></button>
@@ -76,6 +77,6 @@
   </div>
 
   <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
-  <script src="/app.js?v=31" type="module"></script>
+  <script src="/app.js?v=32" type="module"></script>
 </body>
 </html>

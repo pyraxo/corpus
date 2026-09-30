@@ -1770,6 +1770,7 @@ document.addEventListener('click', async (ev) => {
   if (d.unfilter) { ui.filters.delete(d.unfilter); ui.visible = PAGE; syncUrl(); renderLibrary(); return; }
   if (d.caret) { ui.railOpen.has(d.caret) ? ui.railOpen.delete(d.caret) : ui.railOpen.add(d.caret); $('.rail').innerHTML = renderRail(); return; }
   if (d.status) { ui.status = d.status; ui.visible = PAGE; syncUrl(); renderLibrary(); return; }
+  if (d.searchClear !== undefined) { ui.query = ''; $('#search').value = ''; ui.visible = PAGE; syncUrl(); renderLibrary(); $('#search').focus(); return; }
   if (d.clear !== undefined) { ui.filters.clear(); ui.query = ''; $('#search').value = ''; ui.status = 'active'; ui.visible = PAGE; syncUrl(); renderLibrary(); return; }
   if (d.rail !== undefined) { setRail(!ui.mobileRail); return; }
   if (d.railClose !== undefined) { setRail(false); return; }

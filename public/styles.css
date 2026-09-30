@@ -72,6 +72,11 @@ kbd { font: 500 10px/1 var(--mono); color: var(--ink-3); border: 1px solid var(-
 .search svg { width: 14px; height: 14px; fill: none; stroke: var(--ink-3); stroke-width: 1.5; flex: none; }
 .search input { flex: 1; min-width: 0; border: 0; outline: 0; background: none; }
 .search input::-webkit-search-cancel-button { display: none; }
+/* The × shows only while there's something to clear; it takes the / hint's place. */
+.search-clear { display: none; flex: none; width: 20px; height: 20px; margin-right: -4px; border-radius: 50%; color: var(--ink-3); font-size: 15px; line-height: 1; place-items: center; }
+.search-clear:hover { background: var(--sunk); color: var(--ink); }
+.search:has(input:not(:placeholder-shown)) .search-clear { display: grid; }
+.search:has(input:not(:placeholder-shown)) kbd { display: none; }
 
 /* ── shared controls ────────────────────────────────────── */
 .ghost, .primary { display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 12px; border-radius: 8px; font-weight: 500; font-size: 13px; text-decoration: none; white-space: nowrap; transition: background 0.15s, border-color 0.15s; }
