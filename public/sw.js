@@ -1,7 +1,8 @@
 // Corpus service worker: installable app shell, offline reading, fast repeat loads.
 // Never caches the API, chat, MCP or the sign-in page.
-const VERSION = 'corpus-v36';
-const SHELL = ['/', '/app.js?v=34', '/doc-reader.js?v=34', '/dropdown.js?v=20', '/styles.css?v=34', '/manifest.webmanifest', '/icons/icon-192.png', '/icons/apple-touch-icon.png'];
+const VERSION = 'corpus-v37';
+// The shell: the page and its entry points. Modules they import are cached as they're fetched.
+const SHELL = ['/', '/js/main.js', '/css/base.css', '/css/controls.css', '/css/masthead.css', '/css/library.css', '/css/reader.css', '/css/inbox.css', '/css/pages.css', '/css/chat.css', '/css/palette.css', '/css/dropdown.css', '/css/highlights.css', '/css/sidebar.css', '/css/files.css', '/manifest.webmanifest', '/icons/icon-192.png', '/icons/apple-touch-icon.png'];
 const SHELL_CACHE = `${VERSION}-shell`, DATA_CACHE = 'corpus-data', MEDIA_CACHE = 'corpus-media';
 const MEDIA_MAX = 400;
 // A stalled request must never wedge install or leave the app blank on a bad connection.
@@ -78,8 +79,10 @@ self.addEventListener('fetch', (event) => {
   // Files you added: originals can be large and are read in ranges, so they're left to the network;
   // chapters, covers and book images are kept, so a book you've opened reads offline.
   if (same && url.pathname.startsWith('/files/')) { if (!/\/original\.[a-z0-9]+$/.test(url.pathname)) event.respondWith(networkFirst(req, DATA_CACHE)); return; }
-  // App code and styles are versioned by query string.
-  if (same) { event.respondWith(staleWhileRevalidate(req, SHELL_CACHE)); return; }
+  // App code and styles: the network first (the server answers 304 when unchanged), the cache offline.
+  // pdf.js is large and doesn't change between deploys, so once cached it's served from the cache.
+  if (same && url.pathname.startsWith('/vendor/')) { event.respondWith(staleWhileRevalidate(req, SHELL_CACHE)); return; }
+  if (same) { event.respondWith(networkFirst(req, SHELL_CACHE, { timeout: 4000 })); return; }
   // Fonts and tweet media.
   if (/fonts\.(googleapis|gstatic)\.com$/.test(url.hostname)) { event.respondWith(staleWhileRevalidate(req, MEDIA_CACHE)); return; }
   if (/(^|\.)twimg\.com$/.test(url.hostname) && !/video\.twimg/.test(url.hostname)) { event.respondWith(staleWhileRevalidate(req, MEDIA_CACHE, MEDIA_MAX)); return; }

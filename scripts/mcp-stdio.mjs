@@ -2,7 +2,7 @@
 // stdio ⇄ HTTP bridge for MCP clients that launch a command (Claude Desktop, Hermes stdio, …).
 // Forwards JSON-RPC lines to the running Corpus server so there is a single writer to state.
 //   CORPUS_URL (default http://127.0.0.1:4173)   CORPUS_MCP_TOKEN (default: from .env)
-import '../lib/env.mjs';
+import '../server/config/env.mjs';
 import readline from 'node:readline';
 
 const url = `${(process.env.CORPUS_URL || 'http://127.0.0.1:4173').replace(/\/$/, '')}/mcp`;

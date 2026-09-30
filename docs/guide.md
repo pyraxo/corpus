@@ -6,7 +6,7 @@ Detailed notes on running and operating Corpus. See the [README](../README.md) f
 
 Corpus is a PWA. On iPhone: open https://corpus.example.com in Safari → Share → **Add to Home Screen**. On Android or desktop Chrome: use **Install app** (also in Settings → This device, or ⌘K → "Install Corpus as an app"). Sign in once inside the app; the session lasts 30 days.
 
-The service worker (`public/sw.js`) caches the app shell, the bookmark index (network-first), fonts and tweet images (up to 400), so the library and reader work offline. It never caches `/api`, chat, `/mcp`, or the sign-in page. To ship frontend changes, bump the `?v=` query strings in `index.html` and `VERSION` / `SHELL` in `sw.js`.
+The service worker (`public/sw.js`) caches the app shell, the bookmark index (network-first), fonts and tweet images (up to 400), so the library and reader work offline. It never caches `/api`, chat, `/mcp`, or the sign-in page. App code and styles come from the network first (the server answers `304` when they haven't changed), so a deploy shows up on the next load; bump `VERSION` in `sw.js` when the list of shell files changes.
 
 ## Keyboard
 
@@ -128,7 +128,7 @@ Every shortcut can be changed in Settings → Shortcuts (single keys, modifier c
 
 ## Agents & MCP
 
-Everything the site can do is one set of tools (`lib/ops.mjs`), shared by the Ask chat and an MCP server:
+Everything the site can do is one set of tools (`server/agent/ops/`, grouped by area in `tools/`), shared by the Ask chat and an MCP server:
 
 | area | tools |
 | --- | --- |
@@ -166,7 +166,7 @@ For clients that only launch commands, use the stdio bridge, which forwards to t
 The whole site (pages, `/data`, `/api`, chat) sits behind a single password. Only a scrypt hash is stored. Signing in sets a signed, HttpOnly session cookie that lasts 30 days, and failed attempts are rate-limited per IP. To change the password:
 
 ```sh
-node --input-type=module -e "import {hashPassword} from './lib/auth.mjs'; console.log(hashPassword('new password'))"
+node --input-type=module -e "import {hashPassword} from './server/http/auth.mjs'; console.log(hashPassword('new password'))"
 # put the output in .env as CORPUS_PASSWORD_HASH=…, then restart; also rotate CORPUS_SESSION_SECRET to sign everyone out
 ```
 

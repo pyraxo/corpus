@@ -1,0 +1,36 @@
+/* Buttons, fields, switches, chips, pills and the toast. */
+.ghost, .primary { display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 12px; border-radius: 8px; font-weight: 500; font-size: 13px; text-decoration: none; white-space: nowrap; transition: background 0.15s, border-color 0.15s; }
+.ghost { border: 1px solid var(--rule-2); background: var(--surface); }
+.ghost:hover { border-color: var(--ink-3); }
+.ghost.small { height: 26px; padding: 0 8px; font-size: 12px; border-color: transparent; color: var(--ink-3); background: none; }
+.ghost.danger { color: var(--accent-ink); }
+.primary { background: var(--ink); color: var(--bg); border: 1px solid var(--ink); }
+.primary:hover { opacity: 0.88; }
+.primary kbd { color: inherit; border-color: color-mix(in srgb, var(--bg) 35%, transparent); }
+.segmented { display: inline-flex; padding: 2px; border: 1px solid var(--rule-2); border-radius: 8px; background: var(--surface); }
+.segmented button { height: 26px; padding: 0 10px; border-radius: 6px; font-size: 12px; font-weight: 500; color: var(--ink-3); }
+.segmented button[aria-pressed='true'] { background: var(--sunk); color: var(--ink); box-shadow: inset 0 0 0 1px var(--rule-2); }
+select, .field { height: 32px; padding: 0 10px; border: 1px solid var(--rule-2); border-radius: 8px; background: var(--surface); outline: 0; }
+select:focus, .field:focus { border-color: var(--ink-3); }
+textarea.field { height: auto; padding: 8px 10px; resize: vertical; line-height: 1.5; }
+.chip { display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 10px; border-radius: 999px; background: var(--ink); color: var(--bg); font-size: 12px; font-weight: 500; }
+.chip span { opacity: 0.6; }
+.pill, .fmt { display: inline-flex; align-items: center; height: 20px; padding: 0 8px; border-radius: 999px; border: 1px solid var(--rule-2); font-size: 11px; color: var(--ink-2); white-space: nowrap; }
+.pill.ok { color: var(--ink-3); }
+.pill.running { border-color: var(--accent); color: var(--accent-ink); gap: 5px; }
+.pill.running::before { content: ''; width: 5px; height: 5px; border-radius: 50%; background: var(--accent); animation: pulse 0.8s infinite alternate; }
+.fmt { font-family: var(--mono); font-size: 10px; letter-spacing: 0.02em; text-transform: uppercase; border: 0; padding: 0; color: var(--ink-3); }
+.state { font: 10px var(--mono); text-transform: uppercase; color: var(--accent-ink); }
+.count { font: 500 12px var(--mono); color: var(--ink-3); }
+.switch { width: 34px; height: 20px; border-radius: 999px; background: var(--rule-2); position: relative; transition: background 0.15s; }
+.switch span { position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: var(--surface); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2); transition: transform 0.15s; }
+.switch[aria-checked='true'] { background: var(--ink); }
+.switch[aria-checked='true'] span { transform: translateX(14px); }
+.toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); z-index: 60; padding: 10px 16px; border-radius: 999px; background: var(--ink); color: var(--bg); font-size: 13px; box-shadow: var(--shadow); }
+.pill.f-kind { border-style: dashed; }
+.pill.f-label { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+.pill.mine { box-shadow: inset 0 0 0 1px var(--accent); border-color: transparent; }
+.pill.trash-pill { border-color: color-mix(in srgb, var(--accent) 50%, var(--rule-2)); color: var(--accent-ink); font-family: var(--mono); font-size: 10.5px; }
+.toast { display: flex; align-items: center; gap: 12px; }
+.toast button { color: inherit; font-weight: 600; text-decoration: underline; text-underline-offset: 3px; }
+.toast button kbd { color: inherit; opacity: 0.7; border-color: color-mix(in srgb, var(--bg) 40%, transparent); text-decoration: none; }

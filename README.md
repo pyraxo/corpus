@@ -42,14 +42,27 @@ Settings → Agents & MCP copies it with your URL and token filled in.
 
 ## How it works
 
-`server.mjs` serves a plain JavaScript front end from `public/` and builds the index with `lib/`:
+No dependencies: Node's standard library on the server, plain JavaScript modules in the browser (and pdf.js, vendored).
 
-- `build.mjs`: index and tag scoring
-- `x-client.mjs`, `enricher.mjs`: thread fetching
-- `jev.mjs`: classification
-- `ops.mjs`: every action, shared by chat and MCP
-- `archive.mjs`: local copies of post images
-- `files.mjs`: files you add (with `pdf.mjs`, `epub.mjs`, `mobi.mjs`, `html.mjs`); `public/doc-reader.js` shows them, with pdf.js in `public/vendor/pdfjs/`
-- `scratchpad.mjs`: the inbox scratchpad shared with agents
+```text
+server/
+  main.mjs            starts everything
+  core.mjs            builds, the search index, Jev for new bookmarks, capture and archive workers
+  config/             .env, data paths, API keys
+  http/               the site: request order and auth (site.mjs), routes/, static files, a small router
+  library/            the index (build, search, taxonomy) and what you keep (state, scratchpad, trash, skills, saved pages)
+  capture/            X threads and articles, linked pages, local copies of images
+  classify/           Jev (topics, kinds, suggested tags) and image descriptions
+  files/              files you add (store.mjs) and their formats: PDF, EPUB, MOBI, zip, HTML
+  agent/              chat, MCP, and ops/: every action as a tool, grouped in tools/
+scripts/              backfill, rebuild, the MCP stdio bridge
+public/
+  js/main.js          starts the app; core/, data/, ui/, views/, features/, app/ hold the rest
+  css/                one stylesheet per part of the app
+  vendor/pdfjs/       pdf.js, for PDFs
+docs/                 the guide, and connect.md for agents
+```
+
+`npm start` runs the server; `npm run check` syntax-checks every file.
 
 See [docs/guide.md](docs/guide.md) for details.

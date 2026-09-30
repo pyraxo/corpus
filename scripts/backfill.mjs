@@ -7,13 +7,13 @@
 //   npm run backfill -- --classify   # only (re)classify already-captured bookmarks
 //   npm run backfill -- --enrich     # only unroll threads
 //   npm run backfill -- --limit 200  # cap items per stage
-import '../lib/env.mjs';
+import '../server/config/env.mjs';
 import fs from 'node:fs/promises';
-import { build } from '../lib/build.mjs';
-import { paths } from '../lib/paths.mjs';
-import { Enricher } from '../lib/enricher.mjs';
-import { acquireLock } from '../lib/lock.mjs';
-import { classifyMany, needsClassification } from '../lib/jev.mjs';
+import { build } from '../server/library/build.mjs';
+import { paths } from '../server/config/paths.mjs';
+import { Enricher } from '../server/capture/enricher.mjs';
+import { acquireLock } from '../server/capture/lock.mjs';
+import { classifyMany, needsClassification } from '../server/classify/jev.mjs';
 
 const args = process.argv.slice(2);
 const only = args.includes('--classify') ? 'classify' : args.includes('--enrich') ? 'enrich' : null;

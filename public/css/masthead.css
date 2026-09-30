@@ -1,0 +1,48 @@
+/* The masthead: wordmark, navigation, search. */
+.masthead { position: sticky; top: 0; z-index: 20; height: var(--head); display: flex; align-items: center; gap: 36px; padding: 0 28px; background: color-mix(in srgb, var(--bg) 88%, transparent); backdrop-filter: saturate(1.4) blur(14px); border-bottom: 1px solid var(--rule); }
+.wordmark { font: 400 28px/1 var(--serif); text-decoration: none; letter-spacing: -0.02em; display: flex; align-items: baseline; gap: 2px; }
+.wordmark::after { content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); transform: translateY(-2px); }
+.primary-nav { display: flex; gap: 24px; }
+.primary-nav a { text-decoration: none; color: var(--ink-3); font-weight: 500; transition: color 0.15s; display: flex; gap: 6px; align-items: baseline; }
+.primary-nav a:hover, .primary-nav a[aria-current='page'] { color: var(--ink); }
+.nav-count { font: 500 11px var(--mono); color: var(--ink-3); }
+.search { margin-left: auto; display: flex; align-items: center; gap: 8px; height: 34px; width: min(360px, 34vw); padding: 0 10px; border: 1px solid var(--rule-2); border-radius: 8px; background: var(--surface); transition: border-color 0.15s; }
+.search:focus-within { border-color: var(--ink-3); }
+.search svg { width: 14px; height: 14px; fill: none; stroke: var(--ink-3); stroke-width: 1.5; flex: none; }
+.search input { flex: 1; min-width: 0; border: 0; outline: 0; background: none; }
+.search input::-webkit-search-cancel-button { display: none; }
+/* The × shows only while there's something to clear; it takes the / hint's place. */
+.search-clear { display: none; flex: none; width: 20px; height: 20px; margin-right: -4px; border-radius: 50%; color: var(--ink-3); font-size: 15px; line-height: 1; place-items: center; }
+.search-clear:hover { background: var(--sunk); color: var(--ink); }
+.search:has(input:not(:placeholder-shown)) .search-clear { display: grid; }
+.search:has(input:not(:placeholder-shown)) kbd { display: none; }
+@media (max-width: 860px) {
+  .masthead { gap: 16px; padding: 0 16px; backdrop-filter: none; background: var(--bg); }
+  .primary-nav { position: fixed; z-index: 30; left: 0; right: 0; bottom: 0; height: var(--nav); gap: 0; padding: 0 max(4px, env(safe-area-inset-right)) env(safe-area-inset-bottom) max(4px, env(safe-area-inset-left)); background: color-mix(in srgb, var(--bg) 92%, transparent); backdrop-filter: blur(14px); border-top: 1px solid var(--rule); }
+  .primary-nav a { flex: 1; min-width: 0; height: 56px; justify-content: center; align-items: center; gap: 4px; font-size: 12px; -webkit-tap-highlight-color: transparent; }
+  .primary-nav a[aria-current='page'] { box-shadow: inset 0 2px 0 var(--accent); }
+  .nav-count:not(:empty) { min-width: 18px; height: 16px; padding: 0 4px; display: grid; place-items: center; border-radius: 999px; background: var(--sunk); font-size: 9.5px; }
+  .search { width: auto; flex: 1; }
+  .search kbd { display: none; }
+}
+.palette-trigger { flex: none; display: grid; place-items: center; height: 34px; padding: 0 4px; border-radius: 8px; }
+.palette-trigger kbd { margin: 0; padding: 4px 6px; font-size: 11px; }
+.palette-trigger:hover kbd { color: var(--ink); border-color: var(--ink-3); }
+.search[hidden] + .palette-trigger { margin-left: auto; }
+.mobile-search-trigger { display: none; }
+.mobile-rewind { display: none; }
+@media (max-width: 860px) {
+  .palette-trigger { display: none; }
+  .mobile-search-trigger { display: none; flex: none; width: 34px; height: 34px; align-items: center; justify-content: center; border-radius: 8px; }
+  .mobile-search-trigger svg { width: 15px; height: 15px; fill: none; stroke: var(--ink-3); stroke-width: 1.5; }
+  .search[hidden] + .mobile-search-trigger { display: flex; margin-left: auto; }
+  .mobile-rewind { display: grid; place-items: center; flex: none; width: 34px; height: 34px; border-radius: 8px; -webkit-tap-highlight-color: transparent; }
+  .mobile-rewind svg { width: 17px; height: 17px; fill: none; stroke: var(--ink-2); stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+  .mobile-rewind:hover svg { stroke: var(--ink); }
+}
+@media (display-mode: standalone) {
+  .masthead { padding-top: env(safe-area-inset-top); padding-left: max(28px, env(safe-area-inset-left)); padding-right: max(28px, env(safe-area-inset-right)); }
+}
+@media (display-mode: standalone) and (max-width: 860px) {
+  .masthead { padding-left: max(16px, env(safe-area-inset-left)); padding-right: max(16px, env(safe-area-inset-right)); }
+}

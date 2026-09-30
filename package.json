@@ -7,9 +7,10 @@
     "node": ">=22.5"
   },
   "scripts": {
-    "start": "node --no-warnings server.mjs",
+    "start": "node --no-warnings server/main.mjs",
     "build:data": "node --no-warnings scripts/build-data.mjs",
-    "check": "for f in server.mjs lib/*.mjs scripts/*.mjs public/app.js public/doc-reader.js public/sw.js; do node --check $f || exit 1; done",
+    "check": "find server scripts public/js public/sw.js -name '*.mjs' -o -name '*.js' | xargs -n1 node --check",
     "backfill": "node --no-warnings scripts/backfill.mjs"
-  }
+  },
+  "main": "server/main.mjs"
 }
