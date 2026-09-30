@@ -1,7 +1,7 @@
 // Corpus service worker: installable app shell, offline reading, fast repeat loads.
 // Never caches the API, chat, MCP or the sign-in page.
-const VERSION = 'corpus-v30';
-const SHELL = ['/', '/app.js?v=28', '/dropdown.js?v=20', '/styles.css?v=28', '/manifest.webmanifest', '/icons/icon-192.png', '/icons/apple-touch-icon.png'];
+const VERSION = 'corpus-v33';
+const SHELL = ['/', '/app.js?v=31', '/dropdown.js?v=20', '/styles.css?v=31', '/manifest.webmanifest', '/icons/icon-192.png', '/icons/apple-touch-icon.png'];
 const SHELL_CACHE = `${VERSION}-shell`, DATA_CACHE = 'corpus-data', MEDIA_CACHE = 'corpus-media';
 const MEDIA_MAX = 400;
 // A stalled request must never wedge install or leave the app blank on a bad connection.
@@ -65,7 +65,8 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(req.url);
   const same = url.origin === self.location.origin;
 
-  if (same && (url.pathname.startsWith('/api/') || url.pathname === '/mcp' || url.pathname === '/health' || url.pathname === '/sw.js')) return;
+  // /media is Corpus's archived copy of post images and video: large, ranged, and already on disk.
+  if (same && (url.pathname.startsWith('/api/') || url.pathname === '/media' || url.pathname === '/mcp' || url.pathname === '/health' || url.pathname === '/sw.js')) return;
 
   // Pages: always try the network (fresh app, correct sign-in state); fall back to the cached shell offline.
   if (req.mode === 'navigate') {

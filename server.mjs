@@ -21,6 +21,8 @@ import { KEY_NAMES, initKeys, keysStatus, setKey } from './lib/keys.mjs';
 import { createOps } from './lib/ops.mjs';
 import { handleMcp } from './lib/mcp.mjs';
 import { listSkills } from './lib/skills.mjs';
+import { Archiver, MEDIA_TYPES } from './lib/archive.mjs';
+import { readPad, writePad } from './lib/scratchpad.mjs';
 import crypto from 'node:crypto';
 
 const port = Number(process.env.PORT || 4173);
@@ -30,7 +32,7 @@ const [checkH, checkM] = (process.env.SOURCE_CHECK_UTC || '23:30').split(':').ma
 const defaultIds = new Set(defaultConcepts().map(c => c.id));
 const log = (m) => console.log(`${new Date().toISOString()} ${m}`);
 
-const mime = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.json': 'application/json; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon', '.webmanifest': 'application/manifest+json' };
+const mime = { ...MEDIA_TYPES, '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.json': 'application/json; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon', '.webmanifest': 'application/manifest+json' };
 
 let lastBuild = null;
 let building = null;
@@ -42,6 +44,8 @@ async function rebuild(reason) {
     try {
       const result = await build({ log: (m) => log(`[build:${reason}] ${m}`) });
       lastBuild = { at: result.generatedAt, total: result.total, enriched: result.enriched, threads: result.threads, reason };
+      // Every build (new bookmarks, new captures) queues any media not yet saved locally.
+      archiver.enqueue(result.records);
       return result;
     } finally { building = null; }
   })();
@@ -64,6 +68,7 @@ async function classifyNew(result) {
 }
 
 const enricher = new Enricher({ log, onBatch: async () => classifyNew(await rebuild('enrich')) });
+const archiver = new Archiver({ log });
 
 // Search index for chat, rebuilt whenever the build on disk changes (server or backfill script).
 let index = null, indexAt = null;
@@ -138,6 +143,25 @@ async function serveFile(req, res, file, cache) {
   else { res.writeHead(200, { ...headers, 'content-length': stat.size }); createReadStream(file).pipe(res); }
 }
 
+// Archived images (byte ranges too, for clients that ask).
+async function serveMedia(req, res, file) {
+  const { size } = await fs.stat(file);
+  const headers = { 'content-type': mime[path.extname(file)] || 'application/octet-stream', 'cache-control': 'private, max-age=31536000, immutable', 'accept-ranges': 'bytes' };
+  const m = /^bytes=(\d*)-(\d*)$/.exec(req.headers.range || '');
+  if (m && (m[1] || m[2])) {
+    const start = m[1] ? Number(m[1]) : Math.max(0, size - Number(m[2]));
+    const end = m[1] && m[2] ? Math.min(Number(m[2]), size - 1) : size - 1;
+    if (start > end) { res.writeHead(416, { 'content-range': `bytes */${size}` }); res.end(); return; }
+    res.writeHead(206, { ...headers, 'content-range': `bytes ${start}-${end}/${size}`, 'content-length': end - start + 1 });
+    if (req.method === 'HEAD') { res.end(); return; }
+    createReadStream(file, { start, end }).pipe(res);
+    return;
+  }
+  res.writeHead(200, { ...headers, 'content-length': size });
+  if (req.method === 'HEAD') { res.end(); return; }
+  createReadStream(file).pipe(res);
+}
+
 const within = (dir, rel) => { const f = path.resolve(dir, `.${rel}`); return f.startsWith(dir + path.sep) ? f : null; };
 
 async function status() {
@@ -155,6 +179,7 @@ async function status() {
     building: !!building,
     source,
     enrichment: { ...enricher.status(), enabled: state.settings.enrich !== false },
+    archive: { ...archiver.status(), enabled: state.settings.archive !== false },
     classifiers: { typesafe: !!process.env.TYPESAFE_API_KEY, openrouter: !!process.env.OPENROUTER_API_KEY },
     chat: {
       models: MODELS.filter(m => !state.settings.disabledModels?.includes(m.id)).map(({ id, label, note }) => ({ id, label, note })),
@@ -206,7 +231,7 @@ const server = http.createServer(async (req, res) => {
       if (route === 'GET /api/status') return send(res, 200, await status());
       if (route === 'GET /api/skills') return send(res, 200, { skills: await listSkills() });
       if (route === 'GET /api/mcp') return send(res, 200, { url: `${req.headers['x-forwarded-proto'] === 'https' || req.headers['cf-visitor'] ? 'https' : 'http'}://${req.headers.host}/mcp`, token: mcpToken || null, tools: ops.tools.length });
-      if (route === 'POST /api/ops') { const { tool, args } = await readBody(req); try { return send(res, 200, await ops.call(tool, args)); } catch (e) { return send(res, 400, { ok: false, error: e.message }); } }
+      if (route === 'POST /api/ops') { const { tool, args } = await readBody(req); try { return send(res, 200, await ops.call(tool, args, { by: 'you' })); } catch (e) { return send(res, 400, { ok: false, error: e.message }); } }
       if (route === 'GET /api/chats') return send(res, 200, { chats: await listChats({ scope: url.searchParams.get('scope'), bookmark: url.searchParams.get('bookmark'), archived: url.searchParams.get('archived') === '1' }) });
       if (req.method === 'GET' && url.pathname.startsWith('/api/chats/')) { const c = await getChat(url.pathname.split('/').pop()); return c ? send(res, 200, c) : send(res, 404, { ok: false }); }
       if (req.method === 'PUT' && url.pathname.startsWith('/api/chats/')) {
@@ -215,6 +240,17 @@ const server = http.createServer(async (req, res) => {
         return c ? send(res, 200, { ok: true, chat: c }) : send(res, 404, { ok: false });
       }
       if (req.method === 'DELETE' && url.pathname.startsWith('/api/chats/')) { await deleteChat(url.pathname.split('/').pop()); return send(res, 200, { ok: true }); }
+      if (route === 'GET /api/scratchpad') { const p = await readPad(); return send(res, 200, { text: p.text, updatedAt: p.updatedAt, updatedBy: p.updatedBy, revisions: p.history.length }); }
+      if (route === 'PUT /api/scratchpad') {
+        const { text, base } = await readBody(req);
+        try { const p = await writePad({ text: String(text ?? ''), mode: 'replace', by: 'you', base }); return send(res, 200, { ok: true, text: p.text, updatedAt: p.updatedAt, updatedBy: p.updatedBy, merged: !!p.merged }); }
+        catch (e) { return send(res, 400, { ok: false, error: e.message }); }
+      }
+      if (req.method === 'GET' && url.pathname.startsWith('/api/archive/')) {
+        const r = (await getIndex()).byId.get(decodeURIComponent(url.pathname.split('/').pop()));
+        if (!r) return send(res, 404, { ok: false });
+        return send(res, 200, { ok: true, captured: r.enrichment === 'ok', ...archiver.recordStatus(r) });
+      }
       if (route === 'GET /api/keys') return send(res, 200, { keys: await keysStatus() });
       if (route === 'PUT /api/keys') {
         const { name, value } = await readBody(req);
@@ -292,6 +328,7 @@ const server = http.createServer(async (req, res) => {
         if (patch.disabledModels && patch.disabledModels.length >= MODELS.length) return send(res, 400, { ok: false, error: 'At least one model must stay enabled' });
         const s = await writeState(st => { Object.assign(st.settings, patch); });
         if ('enrich' in patch) { enricher.paused = patch.enrich === false; if (!enricher.paused) enricher.kick(); }
+        if ('archive' in patch) { archiver.paused = patch.archive === false; if (!archiver.paused) archiver.enqueue((await getIndex()).records); }
         return send(res, 200, { ok: true, settings: s.settings });
       }
       if (route === 'POST /api/backfill') {
@@ -314,7 +351,7 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === '/connect.md') { const body = await fs.readFile(path.join(paths.root || process.cwd(), 'docs', 'connect.md'), 'utf8'); return send(res, 200, body, { 'content-type': 'text/markdown; charset=utf-8', 'cache-control': 'public, max-age=300' }); }
     const publicAsset = ['/styles.css', '/manifest.webmanifest', '/sw.js', '/favicon.ico'].includes(url.pathname) || url.pathname.startsWith('/icons/');
     if (!isAuthed(req) && !publicAsset) {
-      if (url.pathname.startsWith('/data/')) return send(res, 401, { ok: false, error: 'Sign in required' });
+      if (url.pathname.startsWith('/data/') || url.pathname === '/media') return send(res, 401, { ok: false, error: 'Sign in required' });
       return await serveFile(req, res, path.join(paths.public, 'login.html'), 'no-store');
     }
     if (url.pathname === '/login') { res.writeHead(302, { location: '/' }); res.end(); return; }
@@ -322,6 +359,11 @@ const server = http.createServer(async (req, res) => {
       const file = within(paths.build, url.pathname.slice(5));
       if (!file) return send(res, 400, { error: 'bad path' });
       return await serveFile(req, res, file, 'no-cache');
+    }
+    if (url.pathname === '/media') {
+      // The local copy of a post's image, used when X no longer serves it.
+      const file = archiver.fileFor(url.searchParams.get('u') || '');
+      return file ? await serveMedia(req, res, file) : send(res, 404, { ok: false, error: 'Not archived' });
     }
     if (url.pathname === '/favicon.ico') return await serveFile(req, res, path.join(paths.public, 'icons', 'favicon-32.png'), 'public, max-age=86400');
     const rel = url.pathname === '/' || !path.extname(url.pathname) ? '/index.html' : decodeURIComponent(url.pathname);
@@ -340,6 +382,10 @@ await purgeTrash({ log });
 setInterval(() => purgeTrash({ log }).catch(e => log(`[trash] ${e.message}`)), 6 * 3600_000).unref();
 const state = await readState();
 if (state.settings.enrich === false) enricher.paused = true;
+await archiver.init();
+if (state.settings.archive === false) archiver.paused = true;
+// Also picks up captures from the backfill script, which builds outside this process.
+setInterval(() => getIndex().then(ix => archiver.enqueue(ix.records)).catch(() => {}), 20 * 60_000).unref();
 await checkSource();
 function scheduleSourceCheck() {
   const now = new Date(), next = new Date(now);

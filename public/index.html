@@ -34,7 +34,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&family=Instrument+Serif:ital@0;1&family=Hedvig+Letters+Serif:opsz@12..24&display=swap" />
-  <link rel="stylesheet" href="/styles.css?v=28" />
+  <link rel="stylesheet" href="/styles.css?v=31" />
   <script>
     try { const t = JSON.parse(window.localStorage.getItem('corpus.prefs') || '{}').theme; if (t && t !== 'system') document.documentElement.dataset.theme = t; } catch {}
   </script>
@@ -45,6 +45,7 @@
     <nav class="primary-nav" aria-label="Primary">
       <a href="/" data-link data-nav="library">Library</a>
       <a href="/inbox" data-link data-nav="inbox">Inbox <span class="nav-count" id="inbox-count"></span></a>
+      <a href="/highlights" data-link data-nav="highlights">Highlights</a>
       <a href="/ask" data-link data-nav="ask">Ask</a>
       <a href="/taxonomy" data-link data-nav="taxonomy">Taxonomy</a>
       <a href="/settings" data-link data-nav="settings">Settings</a>
@@ -75,6 +76,6 @@
   </div>
 
   <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
-  <script src="/app.js?v=28" type="module"></script>
+  <script src="/app.js?v=31" type="module"></script>
 </body>
 </html>

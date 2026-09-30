@@ -23,7 +23,7 @@ curl -s "$URL" \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}'
 ```
 
-A working server returns a list of about 20 tools, including `search_bookmarks`. A `401` means the token is wrong.
+A working server returns a list of about 23 tools, including `search_bookmarks`. A `401` means the token is wrong.
 
 ## 3. Register Corpus in your own MCP configuration
 
@@ -84,7 +84,9 @@ Tell the user in two or three lines:
 ## Using Corpus afterwards
 
 - **Start** with `get_overview`. Find bookmarks with `search_bookmarks` and open one with `read_bookmark`. Cite bookmarks by id or url.
-- **Changes** go through `update_bookmark` and `bulk_update_bookmarks` (tags, triage, notes), `create_bookmark` (save a URL), and `delete_bookmark` (moves it to Trash for 30 days).
+- **Changes** go through `update_bookmark` and `bulk_update_bookmarks` (tags, triage, scratchpads), `create_bookmark` (save a URL), and `delete_bookmark` (moves it to Trash for 30 days).
+- **Scratchpads**: the inbox has one scratchpad shared by the user and every agent. Call `read_scratchpad` before starting work and `write_scratchpad` to leave plans, findings or lists (it appends by default). Pass a bookmark `id` to read or write that bookmark's own scratchpad.
+- **Highlights**: `list_highlights` returns the passages the user highlighted while reading. `read_bookmark` includes a bookmark's highlights and scratchpad.
 - **Taxonomy and skills** have their own tools: `list_concepts`, `create_concept`, `update_concept` and `delete_concept`; and `list_skills`, `get_skill`, `create_skill`, `update_skill` and `delete_skill`.
 - **Background jobs**: `run_classification` starts Jev tagging and `get_job` reports progress; `capture_threads` fetches missing threads.
 - If a tool returns `needs_confirmation`, ask the user before calling it again with `confirm: true`.

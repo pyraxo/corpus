@@ -12,10 +12,10 @@ The service worker (`public/sw.js`) caches the app shell, the bookmark index (ne
 
 Press `⌘K` (or `Ctrl K`) for the command palette. It searches bookmarks, jumps to pages, filters by any concept, runs actions, and can send the query straight to Ask. `?` lists every shortcut. The main ones:
 
-- **Anywhere:** `/` search · `g l/i/a/t/s` go to Library, Inbox, Ask, Taxonomy, Settings · `⇧D` dark mode · `esc` back
+- **Anywhere:** `/` search · `g l/i/h/a/t/s` go to Library, Inbox, Highlights, Ask, Taxonomy, Settings · `⇧D` dark mode · `esc` back
 - **Library:** arrow keys or `h j k l` move between cards in wall, grid and list · `⏎`/`o` open · `1 2 3` layout · `x` clear filters
-- **Reader:** `j/k` or `←/→` next/previous · `c`/`r` chat/read · `t` tag · `n` note · `o` open on X · `m`/`e` keep/archive · `s` stack · `d` done reading
-- **Inbox:** `⏎` keep · `e` archive · `j/↓` next · `k/↑` previous · `o` open
+- **Reader:** `j/k` or `←/→` next/previous · `c`/`r` chat/read · `t` tag · `n` scratchpad · `h` highlight the selection · `o` open on X · `m`/`e` keep/archive · `s` stack · `d` done reading
+- **Inbox:** `⏎` keep · `e` archive · `j/↓` next · `k/↑` previous · `o` open · `p` inbox scratchpad · `h` highlight
 
 ## Run
 
@@ -59,7 +59,9 @@ Format is derived from the content. A thread is anything with two or more self-r
 
 | path | contents |
 | --- | --- |
-| `data/state.json` | your tag overrides, notes, triage state, taxonomy edits |
+| `data/state.json` | your tag overrides, bookmark scratchpads, highlights, triage state, taxonomy edits |
+| `data/scratchpad.json` | the inbox scratchpad and its last 50 revisions |
+| `data/archive/media/` | Corpus's own copy of every post's images |
 | `data/build/` | generated index served at `/data/*` |
 | `data/enrich/`, `data/classify/`, `data/describe/` | per-bookmark caches |
 | `data/manual.json` | bookmarks saved by URL (web pages) |
@@ -72,11 +74,25 @@ Secrets go in the ignored `.env` (`TYPESAFE_API_KEY`, `OPENROUTER_API_KEY`, `COR
 - **The stack** is a short reading list, at the top of the Library: at most five bookmarks, first in first out. Add one from the reader (**Add to stack**, `s`); when the stack is full, adding a sixth lets the oldest go. Remove one with its `×`, or press `s` again in the reader.
 - **Done reading** (`d`, in the reader) labels a bookmark read, records when, and takes it off the stack. Press it again to mark it unread; the reader still shows when you last read it. Read is a label, not a triage status: cards show a small *Read* mark, the **Recently read** sort orders by when you finished, and bookmarks in Trash don't carry it.
 
+## Scratchpads and highlights
+
+- **Bookmark scratchpad.** Every bookmark has one (it used to be called the note): why you saved it, what to try, questions. It is in the reader and in the inbox's dock, and it is searchable.
+- **Inbox scratchpad.** One running Markdown document for the whole inbox (`p` in the Inbox, or **Scratchpad** in the queue header). You, Ask and any agent connected over MCP read and write the same pad (`read_scratchpad` / `write_scratchpad`). It shares the right sidebar with Ask AI: open either or both (`p` / `a`, or **+ Scratchpad** / **+ Ask AI** in a panel's header), drag a panel by its header to swap top and bottom, drag the bar between them to share the height (double-click to even it out), and drag the sidebar's left edge to widen it. The layout is remembered on each device. It saves as you type. If an agent appends while you are editing, their addition is kept after your text. The last 50 versions are kept in `data/scratchpad.json`. **Preview** renders the Markdown, and `[[id]]` citations open the bookmark.
+- **Highlights.** Select text in the reader or the inbox and tap **Highlight** (or press `h`). Click a highlight to copy or remove it. Each bookmark lists its highlights under the post. **Highlights** (`/highlights`, `g h`) shows all of them, newest first, and opening one scrolls the reader to the passage. They are searchable, included in the export, visible to agents (`list_highlights`, `read_bookmark`), and undoable.
+
+## Keeping everything (the archive)
+
+A post stays readable after it is deleted on X:
+
+- **Text.** FieldTheory's export keeps the bookmarked post itself: its full text (long posts included), author, links and image URLs, and the quoted post's text. Its sync only adds or updates bookmarks and never removes one. It doesn't keep the rest of a thread, X article bodies, or a quoted post's own thread, so Corpus captures those once into `data/enrich/`.
+- **Images.** The server downloads every image (original size), video poster frame, avatar, link-card image and article image into `data/archive/media/`, newest bookmarks first. Video itself isn't kept. New bookmarks are included as soon as they are built. When X stops serving a file, the app shows the local copy (`/media?u=…`, sign-in required). Files X had already removed before they could be saved are counted as "gone from X". `ARCHIVE_MAX_MB` (default 50) caps one file. Turn downloading off in Settings → Sources → Local archive.
+- The reader's footer shows what is saved for each bookmark. `data/` is the only copy, so back it up.
+
 ## Archive, Trash and undo
 
 - **Archive** keeps a bookmark out of the inbox. See it at `/archive` (Library → Status → Archived, or `g e`).
 - **Delete** moves a bookmark to **Trash** (`/trash`, `g d`). It stays restorable for 30 days, then it is purged. For X bookmarks that means a permanent hidden tombstone in Corpus's state; for saved web pages, removal from `data/manual.json`.
-- **Undo / redo** (`⌘Z` / `⇧⌘Z`) covers triage, tags, notes, deletes and bulk actions made in the app. Changes made by the assistant show receipts in Ask instead.
+- **Undo / redo** (`⌘Z` / `⇧⌘Z`) covers triage, tags, scratchpads, highlights, deletes and bulk actions made in the app. Changes made by the assistant show receipts in Ask instead.
 - Corpus never writes to FieldTheory's files. It reads the export, and the server refuses to start if `data/` is inside FieldTheory's folder.
 
 ## Shortcuts
@@ -90,7 +106,8 @@ Everything the site can do is one set of tools (`lib/ops.mjs`), shared by the As
 | area | tools |
 | --- | --- |
 | read | `get_overview`, `search_bookmarks` (keywords + topic/kind/label/format/status/author/date filters, sorts), `read_bookmark` (full thread/article, tags with confidence, optional linked page) |
-| bookmarks | `update_bookmark` (tags, triage, note, restore), `bulk_update_bookmarks` (ids or filter, dry run), `create_bookmark` (save any URL with its text), `delete_bookmark` |
+| bookmarks | `update_bookmark` (tags, triage, scratchpad, restore), `bulk_update_bookmarks` (ids or filter, dry run), `create_bookmark` (save any URL with its text), `delete_bookmark` |
+| scratchpads | `read_scratchpad`, `write_scratchpad` (the inbox-wide pad, or one bookmark's with `id`; append by default), `list_highlights` |
 | taxonomy | `list_concepts`, `create_concept`, `update_concept`, `delete_concept` |
 | skills | `list_skills`, `get_skill`, `create_skill`, `update_skill`, `delete_skill` |
 | jobs | `run_classification` (Jev, background) + `get_job`, `capture_threads`, `rebuild_index` |
@@ -126,9 +143,9 @@ node --input-type=module -e "import {hashPassword} from './lib/auth.mjs'; consol
 # put the output in .env as CORPUS_PASSWORD_HASH=…, then restart; also rotate CORPUS_SESSION_SECRET to sign everyone out
 ```
 
-## Docker / tunnel
+## Docker
 
-`compose.yaml` runs Corpus and the named Cloudflare tunnel for `corpus.example.com`. Copy `.cloudflared/config.example.yml` to `config.yml` and put the tunnel credential at `.cloudflared/credentials.json` (both ignored).
+`compose.yaml` runs Corpus on `127.0.0.1:4173`. The public hostname, tunnel and login gate are managed outside this repo.
 
 ```sh
 docker compose up -d --build

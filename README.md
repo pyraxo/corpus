@@ -1,6 +1,6 @@
 # corpus
 
-A self-hosted home for your saved bookmarks. Corpus reads X bookmarks from [FieldTheory](https://github.com/afar1/fieldtheory-cli), fetches full threads, tags them with [TypeSafe Jev](https://typesafe.ai), and lets you read, triage, and ask questions about them.
+A self-hosted home for your saved bookmarks. Corpus reads X bookmarks from [FieldTheory](https://github.com/afar1/fieldtheory-cli), fetches full threads, tags them with [TypeSafe Jev](https://typesafe.ai), and lets you read, highlight, triage, and ask questions about them. It keeps its own copy of every post's images, so nothing is lost when a post is deleted on X.
 
 ![Corpus demo](docs/demo.gif)
 
@@ -48,5 +48,7 @@ Settings → Agents & MCP copies it with your URL and token filled in.
 - `x-client.mjs`, `enricher.mjs`: thread fetching
 - `jev.mjs`: classification
 - `ops.mjs`: every action, shared by chat and MCP
+- `archive.mjs`: local copies of post images
+- `scratchpad.mjs`: the inbox scratchpad shared with agents
 
 See [docs/guide.md](docs/guide.md) for details.
