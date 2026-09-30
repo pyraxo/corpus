@@ -13,6 +13,7 @@ import { toggleRead, toggleStack } from '../features/marks.js';
 import { pad } from '../features/scratchpad.js';
 import { acceptSuggestion, createConcept, pickSuggestion, reloadTaxonomy, rerenderTags, suggestions } from '../features/tags.js';
 import { openAddDialog } from '../views/add-dialog.js';
+import { startEdit } from '../features/edit.js';
 import { toast } from '../ui/toast.js';
 import { loadChatList, renderAskSide } from '../views/ask.js';
 import { closeReader, openBookmark, openReader, restoreReader, showReaderTab, stepReader, triageReader } from '../views/dialog.js';
@@ -73,6 +74,7 @@ export function setupEvents() {
     if (d.readRestore !== undefined) { await saveOverride([ui.inboxId], { deleted: null }, { label: 'Restore' }); updateInboxCount(); paintDock(); repaintBookmark(ui.inboxId); toast('Restored', { undo: true }); return; }
     if (d.readAll !== undefined) { const first = ui.results?.[0]; if (first) { const was = prefs.openIn; prefs.openIn = 'reader'; openBookmark(first.id, ui.results); prefs.openIn = was; } return; }
     if (d.addFiles !== undefined) { openAddDialog(); return; }
+    if (d.editOpen) { startEdit(t.closest('.reader-body'), store.byId.get(d.editOpen)); return; }
     if (d.suggest) { await acceptSuggestion(t); return; }
     if (d.dismissSuggest) { const id = t.closest('[data-tags]')?.dataset.tags || ui.readerId; const o = store.overrides[id] || {}; await saveOverride([id], { dismissed: [...(o.dismissed || []), d.dismissSuggest] }, { label: 'Dismiss suggestion' }); rerenderTags(store.byId.get(id)); return; }
     if (d.inboxAsk !== undefined) { toggleInboxChat(); return; }

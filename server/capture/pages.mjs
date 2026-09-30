@@ -19,11 +19,11 @@ async function get(url) {
   return { res, type, body: (await res.text()).slice(0, 4_000_000) };
 }
 
-export async function fetchPage(url, { maxChars = 60000 } = {}) {
+export async function fetchPage(url, { maxChars = 60000, fresh = false } = {}) {
   if (!url || isXUrl(url)) return null;
   const file = path.join(dir, `${crypto.createHash('sha1').update(url).digest('hex')}.json`);
   // Pages that couldn't be read are tried again after an hour (the site may have been down).
-  try { const hit = JSON.parse(await fs.readFile(file, 'utf8')); if (hit.v === VERSION && (hit.ok || Date.now() - Date.parse(hit.fetchedAt) < 3600_000)) return hit; } catch {}
+  if (!fresh) try { const hit = JSON.parse(await fs.readFile(file, 'utf8')); if (hit.v === VERSION && (hit.ok || Date.now() - Date.parse(hit.fetchedAt) < 3600_000)) return hit; } catch {}
   let page;
   try {
     let { res, type, body } = await get(url);

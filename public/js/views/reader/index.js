@@ -102,9 +102,12 @@ export function paintDock() {
   const q = ui.inboxQueue || [];
   bar.outerHTML = dockBar(r, ui.view === 'read', q.findIndex(x => x.id === r.id), q.length);
 }
+// An edit in progress in the post pane: moving on asks first, so it isn't lost.
+export const leaveEdit = () => !$('#triage-body > .edit-form') || confirm('Leave without saving your edits?');
+
 // Move to another bookmark in the queue (either mode); in Read the address follows along.
 export function pickQueued(id, { scroll = true } = {}) {
-  if (!id || !store.byId.has(id)) return;
+  if (!id || !store.byId.has(id) || !leaveEdit()) return;
   ui.inboxId = id;
   if (ui.view === 'read') { rememberOpened(id); history.replaceState({ ...history.state }, '', `/read/${id}`); }
   renderInbox();
@@ -120,7 +123,7 @@ export async function readTriage(value) {
   toast(clear ? 'Moved back to the inbox' : value === 'kept' ? 'Kept' : 'Archived', { undo: true });
 }
 export async function readDelete() {
-  const id = ui.inboxId; if (!id) return;
+  const id = ui.inboxId; if (!id || !leaveEdit()) return;
   const q = ui.inboxQueue || [], next = q[q.findIndex(r => r.id === id) + 1];
   await saveOverride([id], { deleted: true }, { label: 'Move to Trash' });
   ui.readList = ui.readList.filter(x => x !== id);
@@ -148,7 +151,7 @@ function scrollTriageTop() {
 }
 export async function triageCurrent(value) {
   const r = store.byId.get(ui.inboxId);
-  if (!r) return;
+  if (!r || !leaveEdit()) return;
   const queue = ui.inboxQueue || [];
   const next = queue[queue.indexOf(r) + 1];
   await saveOverride([r.id], triagePatch(value), { label: TRIAGE_LABEL[value] });

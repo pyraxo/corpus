@@ -23,7 +23,7 @@ curl -s "$URL" \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}'
 ```
 
-A working server returns a list of about 24 tools, including `search_bookmarks`. A `401` means the token is wrong.
+A working server returns a list of about 25 tools, including `search_bookmarks`. A `401` means the token is wrong.
 
 ## 3. Register Corpus in your own MCP configuration
 

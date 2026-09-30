@@ -102,6 +102,16 @@ Each file lands in the inbox and the library with a title page: cover, title, au
 
 **Highlights and notes.** Select text in a post, a chapter or a PDF page and choose **Highlight** (`h`) or **Add note**. Click a highlight to copy it, add or edit its note, or remove it. A book's or PDF's highlights and notes are also under **Contents → Highlights & notes** (`⇧C`), and opening one from the Highlights page goes to its chapter or page.
 
+## Editing entries
+
+**Edit** in a post's header (or `Shift+E`, in the reader or the dialog) edits it in place:
+
+- **Links you saved:** the title, author, site, date and cover, and the article itself. Edit its text where it is; the toolbar turns the paragraph you're in into a heading, quote, list or code, or removes it, and images and dividers have their own ×. Pasting brings plain text. **Restore original** goes back to the page as it was first read, and **Re-read page** reads it again from the web.
+- **Files:** the title page: title, authors, publisher, date and description.
+- **Posts from X:** the title shown for them (their text comes from X). Clear it to go back to the original.
+
+`Ctrl+Enter` (`⌘Enter` on a Mac) saves and `esc` cancels. Moving to another entry while editing asks first. Agents can do the same with `edit_bookmark`.
+
 ## The stack and read state
 
 - **The stack** is a short reading list, at the top of the Library: at most five bookmarks, first in first out. Add one from the reader (**Add to stack**, `s`); when the stack is full, adding a sixth lets the oldest go. Remove one with its `×`, or press `s` again in the reader.
@@ -139,7 +149,7 @@ Everything the site can do is one set of tools (`server/agent/ops/`, grouped by 
 | area | tools |
 | --- | --- |
 | read | `get_overview`, `search_bookmarks` (keywords + topic/kind/label/format/status/author/date filters, sorts), `read_bookmark` (full thread/article, tags with confidence, optional linked page; for files, their metadata, contents and suggested tags), `read_document` (a book's chapters or a PDF's pages, in full) |
-| bookmarks | `update_bookmark` (tags, triage, scratchpad, restore), `bulk_update_bookmarks` (ids or filter, dry run), `create_bookmark` (save any URL with its text), `delete_bookmark` |
+| bookmarks | `update_bookmark` (tags, triage, scratchpad, restore), `edit_bookmark` (title and, for saved links, the article itself; files' title pages), `bulk_update_bookmarks` (ids or filter, dry run), `create_bookmark` (save any URL with its text), `delete_bookmark` |
 | scratchpads | `read_scratchpad`, `write_scratchpad` (the inbox-wide pad, or one bookmark's with `id`; append by default), `list_highlights` (with notes, and the page or section of a book or PDF) |
 | taxonomy | `list_concepts`, `create_concept`, `update_concept`, `delete_concept` |
 | skills | `list_skills`, `get_skill`, `create_skill`, `update_skill`, `delete_skill` |

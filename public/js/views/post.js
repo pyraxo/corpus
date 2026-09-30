@@ -78,7 +78,7 @@ export function readerContent(r, { docked = false } = {}) {
   const quoted = q ? `<blockquote class="r-quote${q.thread || q.article ? ' full' : ''}"><div class="byline">${avatar(q.author || {})}<span class="name">${esc(q.author?.name || '')}</span><span class="handle">@${esc(q.author?.handle || '')}</span>${q.thread ? `<span class="q-kind">Thread · ${q.thread.length}</span>` : q.article ? '<span class="q-kind">Article</span>' : ''}${q.id ? `<a class="q-open" href="${esc(q.url || `https://x.com/i/status/${q.id}`)}" target="_blank" rel="noopener noreferrer">↗</a>` : ''}</div>${q.article?.title ? `<h2 class="r-title q-title">${esc(q.article.title)}</h2>` : ''}${postBody(q)}</blockquote>` : '';
   const pending = r.enrichment === 'pending';
   return `
-    <header class="r-head">${byline(r, false)}<div class="r-meta"><span>${fullDate(r.postedAt)}</span>${formatBadge(r)}${isFile(r) ? `<a href="${esc(r.url)}" target="_blank" rel="noopener" download="${esc(r.doc.name)}">Original file ↓</a>` : `<a href="${esc(r.url)}" target="_blank" rel="noopener noreferrer">Open ${r.provider === 'twitter' ? 'on X' : esc(host(r.url))} ↗</a>`}</div>
+    <header class="r-head">${byline(r, false)}<div class="r-meta"><span>${fullDate(r.postedAt)}</span>${formatBadge(r)}${isFile(r) ? `<a href="${esc(r.url)}" target="_blank" rel="noopener" download="${esc(r.doc.name)}">Original file ↓</a>` : `<a href="${esc(r.url)}" target="_blank" rel="noopener noreferrer">Open ${r.provider === 'twitter' ? 'on X' : esc(host(r.url))} ↗</a>`}<button type="button" class="r-edit" data-edit-open="${esc(r.id)}" title="Edit (Shift+E)">Edit</button></div>
       ${readerMarks(r, { docked })}
       ${title ? `<h1 class="r-title">${esc(title)}</h1>` : ''}
       ${r.provider === 'web' && r.article ? articleByline(r.article, r.url, { open: false }) : ''}</header>
@@ -123,7 +123,7 @@ function docContent(r, { docked = false } = {}) {
       </div>
       ${d.description ? `<p class="doc-desc">${esc(d.description)}</p>` : ''}
       ${d.subjects?.length ? `<div class="doc-subjects">${d.subjects.slice(0, 10).map(x => `<span class="pill">${esc(x)}</span>`).join('')}</div>` : ''}
-      <div class="r-meta">${formatBadge(r)}<a href="${esc(r.url)}" target="_blank" rel="noopener" download="${esc(d.name)}">Original file ↓</a></div>
+      <div class="r-meta">${formatBadge(r)}<a href="${esc(r.url)}" target="_blank" rel="noopener" download="${esc(d.name)}">Original file ↓</a><button type="button" class="r-edit" data-edit-open="${esc(r.id)}" title="Edit (Shift+E)">Edit</button></div>
       ${readerMarks(r, { docked })}
     </header>
     <div class="doc-mount" data-doc="${esc(r.id)}"></div>
@@ -210,6 +210,8 @@ export function fitScratchpad(ta) {
 export const fitScratchpads = (root = document) => $$('textarea[data-scratchpad]', root).forEach(fitScratchpad);
 export function paintReader(el, r, opts) {
   if (!el) return;
+  // An edit in progress isn't redrawn under you (tagging, a rebuild); saving or cancelling redraws it.
+  if (el.querySelector(':scope > .edit-form')) return;
   const doc = el.querySelector('.doc-mount')?._doc;
   if (doc && doc.id === r.id && doc.el.isConnected) {
     // An open book or PDF stays open, where you were; only what's around it is redrawn.

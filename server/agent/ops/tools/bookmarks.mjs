@@ -1,9 +1,12 @@
-// Changing bookmarks: tags, triage and scratchpads, one or many; adding and deleting.
+// Changing bookmarks: tags, triage and scratchpads, one or many; what they say (edit); adding and deleting.
+import { editManual, restoreManual, rereadManual } from '../../../library/manual.mjs';
+import { updateDoc } from '../../../files/store.mjs';
+import { writeState } from '../../../library/state.mjs';
 
 const CONFIRM_OVER = 25;
 
 export default function bookmarksTools(kit) {
-  const { ctx, select, selector, applyPatch, ingest, fetchFile, needConfirm, saveLink } = kit;
+  const { ctx, select, selector, applyPatch, ingest, fetchFile, needConfirm, saveLink, rebuild } = kit;
   return [
     {
       name: 'update_bookmark', write: true, description: 'Change one bookmark: add/remove tags (names, paths or ids; unknown names become new personal labels), set triage (kept | archived | untriaged), replace or clear its scratchpad (to add to it instead, use write_scratchpad), or restore a deleted bookmark (deleted: false).',
@@ -15,6 +18,36 @@ export default function bookmarksTools(kit) {
         const bits = [res.add.length && `Tagged ${res.add.map(c.path).join(', ')}`, res.remove.length && `untagged ${res.remove.map(c.path).join(', ')}`, a.triage && `marked ${a.triage}`, 'scratchpad' in a && (a.scratchpad ? 'updated its scratchpad' : 'cleared its scratchpad'), a.deleted === false && 'restored it'].filter(Boolean);
         const t = (c.ix.byId.get(String(a.id))?.title || a.id).slice(0, 60);
         return { ok: true, summary: `${bits.join(', ') || 'no change'} · “${t}”`, created_labels: res.created };
+      }
+    },
+    {
+      name: 'edit_bookmark', write: true, description: 'Edit what a bookmark says. Links saved by URL: title, author, site, published (YYYY-MM-DD), cover (an image URL), description, and blocks: the whole article body, as [{type: p|h2|h3|h4|li|oli|quote|code|caption, text} | {type: image, url} | {type: divider}]. action "restore" goes back to the page as it was first read; "reread" reads the page again from the web. Files: title, author (comma-separated for several), publisher, published, description. Posts from X: title only (the post itself comes from X).',
+      input: { type: 'object', properties: { id: { type: 'string' }, title: { type: 'string' }, author: { type: 'string' }, site: { type: 'string' }, published: { type: 'string' }, cover: { type: 'string' }, description: { type: 'string' }, blocks: { type: 'array', items: { type: 'object' } }, action: { type: 'string', enum: ['save', 'restore', 'reread'] } }, required: ['id'] },
+      run: async (a) => {
+        const c = await ctx(); const r = c.ix.byId.get(String(a.id));
+        if (!r) throw new Error(`No bookmark ${a.id}`);
+        const has = (k) => k in a && a[k] !== undefined;
+        if (r.provider === 'web') {
+          const item = a.action === 'restore' ? await restoreManual(r.id) : a.action === 'reread' ? await rereadManual(r.id) : await editManual(r.id, Object.fromEntries(['title', 'author', 'site', 'published', 'cover', 'description', 'blocks'].filter(has).map(k => [k, a[k]])));
+          if (!item) throw new Error(`${r.id} isn't a saved link`);
+        } else if (r.provider === 'file') {
+          const patch = {};
+          if (has('title') && String(a.title).trim()) patch.title = String(a.title).trim().slice(0, 300);
+          if (has('author')) patch.authors = String(a.author || '').split(/\s*[,;]\s*/).filter(Boolean);
+          for (const k of ['publisher', 'published', 'description']) if (has(k)) patch[k] = String(a[k] || '').trim() || null;
+          await updateDoc(r.id, patch);
+        } else {
+          if (!has('title')) throw new Error('Only the title of a post from X can be changed');
+          await writeState(st => { const o = { ...(st.overrides[r.id] || {}) }; if (String(a.title).trim()) o.title = String(a.title).trim().slice(0, 300); else delete o.title; o.updatedAt = new Date().toISOString(); st.overrides[r.id] = o; });
+        }
+        // Restoring and re-reading change what the reader shows, so they wait for the index; an edit
+        // is already on screen (the page applies it), so the index catches up in the background.
+        if (a.action === 'restore' || a.action === 'reread') {
+          const now = (await rebuild('edit')).records.find(x => x.id === r.id);
+          return { ok: true, id: r.id, title: now?.title, summary: a.action === 'restore' ? `Restored “${now?.title}” to the page as first read` : `Read “${now?.title}” again from the web` };
+        }
+        rebuild('edit').catch(() => {});
+        return { ok: true, id: r.id, summary: `Edited “${String(a.title || r.title || r.id).slice(0, 60)}”; search and agents see it once the index is rebuilt, in a few seconds` };
       }
     },
     {

@@ -22,6 +22,7 @@ import { inboxStep, readDelete, readTriage, setMode, triageCurrent } from '../vi
 import { renderSettings } from '../views/settings.js';
 import { moveTaxonomy, renderTaxonomy } from '../views/taxonomy.js';
 import { openAddDialog } from '../views/add-dialog.js';
+import { bodyFor, startEdit } from '../features/edit.js';
 
 const ARROWS = { ArrowDown: 'down', ArrowUp: 'up', ArrowLeft: 'left', ArrowRight: 'right', J: 'down', K: 'up', H: 'left', L: 'right' };
 const GO = { 'go.library': '/', 'go.inbox': '/inbox', 'go.highlights': '/highlights', 'go.ask': '/ask', 'go.taxonomy': '/taxonomy', 'go.settings': '/settings', 'go.archive': '/archive', 'go.trash': '/trash' };
@@ -32,6 +33,10 @@ const ACTIONS = {
   help: showHelp,
   theme: toggleTheme,
   add: () => openAddDialog(),
+  // Edit the entry in front of you: in the dialog, else in the reader view.
+  'reader.edit': () => startEdit(bodyFor(ui.readerId), store.byId.get(ui.readerId)),
+  'read.edit': () => startEdit(bodyFor(ui.inboxId), store.byId.get(ui.inboxId)),
+  'inbox.edit': () => startEdit(bodyFor(ui.inboxId), store.byId.get(ui.inboxId)),
   ...Object.fromEntries(Object.entries(GO).map(([id, path]) => [id, () => { closeReader(); navigate(path); }])),
   'lib.wall': () => setLayout('wall'), 'lib.grid': () => setLayout('grid'), 'lib.list': () => setLayout('list'),
   'lib.clear': () => { clearAll(); syncUrl(); renderLibrary(); },

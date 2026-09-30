@@ -40,6 +40,58 @@ export async function addManual({ url, title, text }, { maxSortIndex = 0n } = {}
   return item;
 }
 
+// The article's fields as they are now, for keeping the original before the first edit.
+const snapshot = (i) => ({ title: i.title, text: i.text, article: i.article ? structuredClone(i.article) : null });
+const blocksText = (blocks) => blocks.filter(b => b.text).map(b => b.text).join('\n\n');
+const BLOCK_TYPES = new Set(['p', 'h2', 'h3', 'h4', 'li', 'oli', 'quote', 'code', 'image', 'divider', 'caption']);
+// Only the kinds of block the reader knows, with their text as plain strings.
+const cleanBlocks = (blocks) => (Array.isArray(blocks) ? blocks : []).filter(b => b && BLOCK_TYPES.has(b.type)).slice(0, 2000).map(b => b.type === 'image' ? { type: 'image', url: String(b.url || '') } : b.type === 'divider' ? { type: 'divider' } : { type: b.type, text: String(b.text || '').slice(0, 20000) }).filter(b => b.type === 'divider' || (b.type === 'image' ? /^https?:\/\//.test(b.url) : b.text.trim()));
+
+// patch: { title, author, site, published, cover, description, blocks }; anything left out stays as it is.
+export async function editManual(id, patch) {
+  const items = await readManual();
+  const item = items.find(i => i.id === id);
+  if (!item) return null;
+  item.original ||= snapshot(item);
+  const a = item.article ||= { siteName: item.site, byline: null, published: null, cover: null, description: null, blocks: item.text.split(/\n{2,}/).filter(Boolean).map(t => ({ type: 'p', text: t })) };
+  if ('title' in patch && String(patch.title).trim()) item.title = String(patch.title).trim().slice(0, 300);
+  if ('author' in patch) a.byline = String(patch.author || '').trim() || null;
+  if ('site' in patch) a.siteName = String(patch.site || '').trim() || item.site;
+  if ('published' in patch) a.published = patch.published && !isNaN(Date.parse(patch.published)) ? new Date(patch.published).toISOString() : null;
+  if ('cover' in patch) a.cover = /^https?:\/\//.test(patch.cover || '') ? patch.cover : null;
+  if ('description' in patch) a.description = String(patch.description || '').trim() || null;
+  if ('blocks' in patch) { a.blocks = cleanBlocks(patch.blocks); a.words = blocksText(a.blocks).split(/\s+/).filter(Boolean).length; a.isArticle = a.words >= 150; }
+  item.text = blocksText(a.blocks) || item.text;
+  item.editedAt = new Date().toISOString();
+  await writeManual(items);
+  return item;
+}
+// Back to the page as it was first read.
+export async function restoreManual(id) {
+  const items = await readManual();
+  const item = items.find(i => i.id === id);
+  if (!item?.original) return item || null;
+  Object.assign(item, item.original);
+  if (!item.article) delete item.article;
+  delete item.original; delete item.editedAt;
+  await writeManual(items);
+  return item;
+}
+// Read the page again from the web (it may have changed, or read badly the first time); edits are replaced.
+export async function rereadManual(id) {
+  const items = await readManual();
+  const item = items.find(i => i.id === id);
+  if (!item) return null;
+  const page = await fetchPage(item.url, { fresh: true });
+  if (!page?.ok) throw new Error(page?.status ? `The page answered ${page.status}` : 'Couldn’t read that page');
+  const a = page.article;
+  Object.assign(item, { title: a?.title || page.title || item.title, text: page.text, site: host(page.url) });
+  if (a?.blocks?.length) item.article = { siteName: a.siteName, byline: a.byline, published: a.published, cover: a.cover, description: a.description, lang: a.lang, words: a.words, isArticle: a.isArticle, blocks: a.blocks };
+  delete item.original; delete item.editedAt;
+  await writeManual(items);
+  return item;
+}
+
 export async function removeManual(id) {
   const items = await readManual();
   const next = items.filter(i => i.id !== id);
@@ -65,7 +117,7 @@ export function asSource(item) {
       id: item.id, status: 'ok', fetchedAt: item.createdAt,
       thread: [{ id: item.id, text: summary, links: [item.url], media: [] }],
       article: long ? {
-        title: item.title, preview: summary, cover: a?.cover || null, site, byline: a?.byline || null, published: a?.published || null,
+        title: item.title, preview: summary, cover: a?.cover || null, site, byline: a?.byline || null, published: a?.published || null, edited: !!item.editedAt,
         blocks: a ? a.blocks : paras.slice(0, 400).map(t => ({ type: 'p', text: t }))
       } : null,
       card: { title: item.title, description: long ? null : summary.slice(0, 280), domain: item.site, image: a?.cover || null, url: item.url },

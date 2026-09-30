@@ -38,6 +38,7 @@ export const KEYMAP = [
   ['reader.delete', 'Reader', 'Move to Trash', ['#']],
   ['reader.stack', 'Reader', 'Add to / take off the stack', ['S']],
   ['reader.done', 'Reader', 'Mark read / unread', ['D']],
+  ['reader.edit', 'Reader', 'Edit this entry', ['Shift+E']],
   ['reader.contents', 'Reader', 'Contents and notes (books, PDFs)', ['Shift+C']],
   ['reader.nextSection', 'Reader', 'Next chapter or page', [']']],
   ['reader.prevSection', 'Reader', 'Previous chapter or page', ['[']],
@@ -54,6 +55,7 @@ export const KEYMAP = [
   ['read.open', 'Read', 'Open original', ['O']],
   ['read.ask', 'Read', 'Ask AI about this', ['A']],
   ['read.pad', 'Read', 'Inbox scratchpad', ['P']],
+  ['read.edit', 'Read', 'Edit this entry', ['Shift+E']],
   ['read.contents', 'Read', 'Contents and notes (books, PDFs)', ['Shift+C']],
   ['read.nextSection', 'Read', 'Next chapter or page', [']']],
   ['read.prevSection', 'Read', 'Previous chapter or page', ['[']],
@@ -67,6 +69,7 @@ export const KEYMAP = [
   ['inbox.ask', 'Inbox', 'Ask AI about this entry', ['A']],
   ['inbox.pad', 'Inbox', 'Inbox scratchpad', ['P']],
   ['inbox.highlight', 'Inbox', 'Highlight the selected text', ['H']],
+  ['inbox.edit', 'Inbox', 'Edit this entry', ['Shift+E']],
   ['read.mode.read', 'Inbox', 'Switch to Read (go through the queue without triaging)', ['R']],
   ['tax.new', 'Taxonomy', 'New concept', ['N']],
   ['ask.new', 'Ask', 'New chat', ['N']]

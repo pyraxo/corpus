@@ -200,7 +200,8 @@ export async function build({ log = console.log } = {}) {
       postedAt: iso(item.postedAt),
       capturedAt: iso(item.bookmarkedAt) || iso(item.syncedAt),
       sortIndex: item.sortIndex || null,
-      title: item.title || titleFor(text, article, card),
+      // Your own title (edited in the reader) wins over the file's, the page's or the post's.
+      title: state.overrides[id]?.title || item.title || titleFor(text, article, card),
       text,
       thread: threadLength > 1 ? threadParts(thread, focal?.id) : null,
       focalIndex: threadLength > 1 ? focalIndex : 0,
