@@ -7,14 +7,20 @@
 .queue-head .count { font-size: 20px; color: var(--ink); }
 .queue ol { list-style: none; margin: 0; padding: 0; position: relative; }
 /* Fixed-height rows, absolutely positioned by JS: only the rows in view are ever in the DOM (see renderQueueRows).
-   Each field is a single truncated line so it always fits the row — must match QUEUE_ROW_H in app.js. */
-.queue li { position: absolute; left: 0; right: 0; box-sizing: border-box; height: 64px; display: grid; align-content: center; gap: 3px; padding: 0 20px; border-bottom: 1px solid var(--rule); cursor: pointer; }
+   Each field is a single truncated line so it always fits the row — heights must match queueRowH() in views/reader/queue.js. */
+.queue li { position: absolute; left: 0; right: 0; box-sizing: border-box; height: 84px; display: grid; align-content: center; gap: 5px; padding: 0 22px; border-bottom: 1px solid var(--rule); cursor: pointer; }
 .queue li:hover { background: var(--sunk); }
 .queue li.on { background: var(--sunk); box-shadow: inset 2px 0 0 var(--accent); }
-.q-author { font-size: 12px; font-weight: 500; min-width: 0; }
+[data-density='compact'] .queue li { height: 56px; gap: 3px; padding: 0 20px; }
+[data-density='compact'] .q-title { font-size: 13.5px; }
+.q-line { display: flex; align-items: baseline; gap: 8px; min-width: 0; font-size: 12px; color: var(--ink-3); }
+.q-line .q-name { flex: 0 1 auto; color: var(--ink-2); }
+.q-line .q-meta { flex: 1 1 auto; min-width: 0; }
+.q-line .q-date { margin-left: auto; }
+.q-author { font-size: 12px; color: var(--ink-2); min-width: 0; }
 .q-name { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.q-title { font-size: 13px; color: var(--ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.q-meta { font: 10px var(--mono); color: var(--ink-3); text-transform: uppercase; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.q-title { font-size: 14px; font-weight: 500; line-height: 1.35; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.q-meta { font: 10px/1.3 var(--mono); color: var(--ink-3); text-transform: uppercase; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .triage { display: flex; flex-direction: column; min-width: 0; height: calc(100vh - var(--head)); position: sticky; top: var(--head); }
 .triage-scroll { flex: 1; overflow-y: auto; padding: 0 40px; }
 .triage-dock { border-top: 1px solid var(--rule); background: var(--bg); }

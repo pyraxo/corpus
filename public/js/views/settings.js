@@ -52,7 +52,7 @@ export function renderSettings() {
   const bodies = {
     appearance: () => group('', `
       ${row('Theme', '', seg('theme', [['system', 'System'], ['light', 'Light'], ['dark', 'Dark']]))}
-      ${row('Density', 'Spacing between cards and rows.', seg('density', [['comfortable', 'Comfortable'], ['compact', 'Compact']]))}
+      ${row('Density', 'Comfortable gives each inbox entry three lines with room around them. Compact fits two lines per entry and tightens the library’s cards.', seg('density', [['comfortable', 'Comfortable'], ['compact', 'Compact']]))}
       ${row('Reader text', 'Size of text in the reader and chat answers.', seg('readerSize', [['s', 'Small'], ['m', 'Medium'], ['l', 'Large']]))}
       ${row('Show sensitive media', 'Posts flagged as sensitive by X.', toggle('showSensitive', prefs.showSensitive))}`),
     library: () => group('Library', `

@@ -29,6 +29,9 @@
 .tile { background: var(--surface); border: 1px solid var(--rule); border-radius: var(--radius); overflow: hidden; cursor: pointer; transition: border-color 0.15s, box-shadow 0.2s, transform 0.2s; }
 .tile:hover { border-color: var(--rule-2); box-shadow: var(--shadow); }
 .tile-pad { padding: 14px 16px 4px; }
+[data-density='compact'] .tile-pad { padding: 10px 12px 2px; }
+[data-density='compact'] .tile-foot { padding: 8px 12px 10px; }
+[data-density='compact'] .card-body { padding: 9px 11px 11px; gap: 4px; }
 .tile-pad p { margin: 0; font-size: 13.5px; line-height: 1.55; color: var(--ink-2); white-space: pre-line; }
 .tile-pad p.lead { color: var(--ink); }
 .tile-pad h3 { margin: 4px 0 6px; font-size: 24px; line-height: 1.12; }

@@ -14,7 +14,7 @@ import { sideDock } from '../../features/sidebar.js';
 import { toast } from '../../ui/toast.js';
 import { captureNow } from '../dialog.js';
 import { afterPaint, fitScratchpads, readerContent, tagEditor } from '../post.js';
-import { QUEUE_ROW_H, ensureQueueVisible, handleQueueScroll, inboxBase, inboxControls, inboxQueue, renderQueueRows } from './queue.js';
+import { queueRowH, ensureQueueVisible, handleQueueScroll, inboxBase, inboxControls, inboxQueue, renderQueueRows } from './queue.js';
 
 // Triage (/inbox): the untriaged queue; keep, archive or delete each one and move on.
 // Read (/read/<id>): the list you opened a bookmark from; read, tag, highlight and annotate,
@@ -62,7 +62,7 @@ export function renderInbox() {
     ? `<div class="queue-head"><div class="queue-count"><span class="count">${num.format(queue.length)}</span><span class="muted">to read${ui.readFrom ? ` · <span class="read-from">${esc(ui.readFrom)}</span>` : ''}</span></div>${modeToggle(true)}<div class="queue-links"><a href="${esc(ui.readBack && !ui.readBack.startsWith('/read') ? ui.readBack : '/')}" data-link data-read-back>← Back</a><button class="link" data-inbox-pad aria-pressed="${!!ui.inboxPad}">Scratchpad</button></div></div>`
     : `<div class="queue-head"><div class="queue-count"><span class="count">${num.format(queue.length)}</span><span class="muted">to triage${queue.length !== base.length ? ` · ${num.format(base.length)} in window` : ''}</span></div>${modeToggle(false)}<div class="queue-links">${counts}<button class="link" data-inbox-pad aria-pressed="${!!ui.inboxPad}">Scratchpad</button></div>${inboxControls(base)}</div>`;
   const prevScroll = $('.queue')?.scrollTop || 0;
-  const list = current ? `<ol id="queue-list" style="height:${queue.length * QUEUE_ROW_H}px"></ol>` : '';
+  const list = current ? `<ol id="queue-list" style="height:${queue.length * queueRowH()}px"></ol>` : '';
   const main = current ? `
       <div class="triage-main">
       <div class="triage-scroll"><div class="reader-body inline${isDoc(current) ? ' has-doc' : ''}" id="triage-body">${readerContent(current, { docked: true })}</div></div>
@@ -91,7 +91,7 @@ export function renderInbox() {
 export function refreshQueue() {
   ui.inboxQueue = ui.view === 'read' ? readQueue() : inboxQueue();
   const listEl = $('#queue-list'), count = $('.queue-count .count');
-  if (listEl) listEl.style.height = `${ui.inboxQueue.length * QUEUE_ROW_H}px`;
+  if (listEl) listEl.style.height = `${ui.inboxQueue.length * queueRowH()}px`;
   if (count) count.textContent = num.format(ui.inboxQueue.length);
   renderQueueRows(); paintDock();
 }

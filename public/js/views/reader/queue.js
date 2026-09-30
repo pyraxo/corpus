@@ -40,14 +40,20 @@ export function inboxControls(base) {
 }
 // Virtualized queue list: only the rows near the scrollport are ever in the DOM, so scrolling
 // works over the whole queue (thousands of bookmarks) instead of a small window around the current item.
-export const QUEUE_ROW_H = 64; // must match .queue li's fixed height in css/inbox.css
+// Row height by density: three lines with room to breathe, or two tight ones. Must match .queue li in css/inbox.css.
+export const queueRowH = () => prefs.density === 'compact' ? 56 : 84;
 const QUEUE_OVERSCAN = 8;
 let queueScrollRaf = 0;
 const queueRowHtml = (r, top, currentId) => {
   const title = (r.title || snippet(r, 80)).slice(0, 90);
   // Omit the title line entirely when there's no text yet (pending capture) — an empty span
   // still reserves its line's height in the fixed-height row, leaving an ugly gap.
-  return `<li class="${r.id === currentId ? 'on' : ''}" style="top:${top}px" data-pick="${r.id}"><span class="q-author"><span class="q-name">${esc(isFile(r) ? r.author.name || fileLine(r) : r.author.name)}</span><span class="q-date">${relDate(r.postedAt)}</span></span>${title ? `<span class="q-title">${esc(title)}</span>` : ''}<span class="q-meta">${label(formatOf(r))}${r.thread ? ` · ${r.thread.length}` : ''}${isDoc(r) && progressOf(r) > 0.005 ? ` · ${Math.round(progressOf(r) * 100)}%` : ''}${isRead(r) ? ' · read' : ''}</span></li>`;
+  const who = isFile(r) ? r.author.name || fileLine(r) : r.author.name;
+  const kind = `${label(formatOf(r))}${r.thread ? ` · ${r.thread.length}` : ''}${isDoc(r) && progressOf(r) > 0.005 ? ` · ${Math.round(progressOf(r) * 100)}%` : ''}${isRead(r) ? ' · read' : ''}`;
+  const attrs = `class="${r.id === currentId ? 'on' : ''}" style="top:${top}px" data-pick="${r.id}"`;
+  // Compact: the title, then one line for who, what and when.
+  if (prefs.density === 'compact') return `<li ${attrs}><span class="q-title">${esc(title || who)}</span><span class="q-line"><span class="q-name">${esc(who)}</span><span class="q-meta">${kind}</span><span class="q-date">${relDate(r.postedAt)}</span></span></li>`;
+  return `<li ${attrs}><span class="q-author"><span class="q-name">${esc(who)}</span><span class="q-date">${relDate(r.postedAt)}</span></span>${title ? `<span class="q-title">${esc(title)}</span>` : ''}<span class="q-meta">${kind}</span></li>`;
 };
 export function renderQueueRows() {
   const listEl = $('#queue-list'), scrollerEl = $('.queue');
@@ -55,9 +61,9 @@ export function renderQueueRows() {
   const queue = ui.inboxQueue || [];
   const viewportH = scrollerEl.clientHeight || 0;
   const scrollTop = Math.max(0, scrollerEl.scrollTop - listEl.offsetTop);
-  const start = Math.max(0, Math.floor(scrollTop / QUEUE_ROW_H) - QUEUE_OVERSCAN);
-  const end = Math.min(queue.length, Math.ceil((scrollTop + viewportH) / QUEUE_ROW_H) + QUEUE_OVERSCAN);
-  listEl.innerHTML = queue.slice(start, end).map((r, i) => queueRowHtml(r, (start + i) * QUEUE_ROW_H, ui.inboxId)).join('');
+  const start = Math.max(0, Math.floor(scrollTop / queueRowH()) - QUEUE_OVERSCAN);
+  const end = Math.min(queue.length, Math.ceil((scrollTop + viewportH) / queueRowH()) + QUEUE_OVERSCAN);
+  listEl.innerHTML = queue.slice(start, end).map((r, i) => queueRowHtml(r, (start + i) * queueRowH(), ui.inboxId)).join('');
 }
 export function handleQueueScroll() { cancelAnimationFrame(queueScrollRaf); queueScrollRaf = requestAnimationFrame(renderQueueRows); }
 // Scrolls the queue so the given bookmark's row is in view, then repaints the visible rows.
@@ -66,7 +72,7 @@ export function ensureQueueVisible(id) {
   if (!scrollerEl || !listEl) return;
   const idx = (ui.inboxQueue || []).findIndex(r => r.id === id);
   if (idx < 0) return;
-  const top = listEl.offsetTop + idx * QUEUE_ROW_H, bottom = top + QUEUE_ROW_H;
+  const top = listEl.offsetTop + idx * queueRowH(), bottom = top + queueRowH();
   if (top < scrollerEl.scrollTop) scrollerEl.scrollTop = top;
   else if (bottom > scrollerEl.scrollTop + scrollerEl.clientHeight) scrollerEl.scrollTop = bottom - scrollerEl.clientHeight;
   renderQueueRows();
