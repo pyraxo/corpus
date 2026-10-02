@@ -32,6 +32,8 @@
 .triage-bar { display: flex; gap: 8px; align-items: center; padding: 12px 40px 14px; background: var(--bg); }
 .triage-bar .muted { margin-left: auto; font-family: var(--mono); }
 .triage-bar .ask-ai[aria-pressed='true'] { background: var(--sunk); color: var(--ink); }
+.triage-bar button { display: inline-flex; align-items: center; gap: 6px; }
+.triage-bar svg { width: 14px; height: 14px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
 .triage-main { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
 @media (max-width: 860px) {
   .inbox { grid-template-columns: 1fr; }
@@ -70,9 +72,11 @@
   .triage-dock .scratchpad { font-size: 16px; min-height: 48px; max-height: 220px; }
   .triage-dock .scratchpad:not(:placeholder-shown) { min-height: 80px; }
   .triage-dock .scratchpad:focus { min-height: 120px; }
-  .triage-bar { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; padding: 10px 12px; }
+  .triage-bar { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 6px; padding: 10px 12px; }
   .triage-bar .primary, .triage-bar .ghost { height: 44px; padding: 0 4px; justify-content: center; font-size: 14px; }
   .triage-bar kbd, .triage-bar .key-or, .triage-bar > .muted { display: none; }
+  .triage-bar svg { width: 18px; height: 18px; }
+  .triage-bar span { display: none; }
 }
 .inbox-controls .dd-trigger { width: 100%; height: 30px; font-size: 12.5px; font-weight: 400; }
 .triage .r-actions { display: none; }

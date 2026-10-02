@@ -157,9 +157,16 @@ function stripCardUrl(text, card) {
   const target = card.url ? card.url.replace(/\/$/, '') : null;
   return text.replace(/\s*(https?:\/\/\S+)\s*$/, (m, u) => (!target || u.replace(/\/$/, '') === target || host(u) === card.domain) ? '' : m);
 }
-const ICON = {
+export const ICON = {
   stack: '<svg viewBox="0 0 16 16" aria-hidden="true"><path class="fill" d="M2.5 5.6 8 3l5.5 2.6L8 8.2z"/><path d="M2.5 8.4 8 11l5.5-2.6M2.5 11.2 8 13.8l5.5-2.6"/></svg>',
-  read: '<svg viewBox="0 0 16 16" aria-hidden="true"><circle class="fill" cx="8" cy="8" r="5.75"/><path class="tick" d="m5.5 8.2 1.8 1.8 3.3-3.6"/></svg>'
+  read: '<svg viewBox="0 0 16 16" aria-hidden="true"><circle class="fill" cx="8" cy="8" r="5.75"/><path class="tick" d="m5.5 8.2 1.8 1.8 3.3-3.6"/></svg>',
+  keep: '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 8.4 6.3 11.2 12.5 4.5"/></svg>',
+  archive: '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 4.5h11M3.5 4.5v8a1 1 0 0 0 1 1h7a1 1 0 0 0 1-1v-8M6.5 8h3"/></svg>',
+  skip: '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 3.5v9l6-4.5-6-4.5zM11.5 3.5v9"/></svg>',
+  delete: '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 4.5h10M6.5 4.5v-1a1 1 0 0 1 1-1h1a1 1 0 0 1 1 1v1M4.5 4.5l.6 8a1 1 0 0 0 1 .9h3.8a1 1 0 0 0 1-.9l.6-8M6.7 7.2v4M9.3 7.2v4"/></svg>',
+  ask: '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 3.5h10a1 1 0 0 1 1 1V9a1 1 0 0 1-1 1H8l-3 2.7V10H3a1 1 0 0 1-1-1V4.5a1 1 0 0 1 1-1z"/></svg>',
+  pad: '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M10.5 2.5l3 3-7.3 7.3-3.6.9.9-3.6z"/><path d="M9.3 3.7l3 3"/></svg>',
+  restore: '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M5 3 2 6l3 3"/><path d="M2 6h7a4 4 0 1 1 0 8H7"/></svg>'
 };
 // Stack and read state sit under the byline, where the decision to read gets made.
 function readerMarks(r, { docked = false } = {}) {

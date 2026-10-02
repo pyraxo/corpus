@@ -13,7 +13,7 @@ import { inboxPadHtml, loadPad, pad } from '../../features/scratchpad.js';
 import { sideDock } from '../../features/sidebar.js';
 import { toast } from '../../ui/toast.js';
 import { captureNow } from '../dialog.js';
-import { afterPaint, fitScratchpads, readerContent, tagEditor } from '../post.js';
+import { ICON, afterPaint, fitScratchpads, readerContent, tagEditor } from '../post.js';
 import { queueRowH, ensureQueueVisible, handleQueueScroll, inboxBase, inboxControls, inboxQueue, renderQueueRows } from './queue.js';
 import { paneEdge } from '../../ui/panes.js';
 
@@ -27,24 +27,24 @@ function modeToggle(reading) {
 function dockBar(current, reading, idx, total) {
   const o = store.overrides[current.id] || {};
   if (!reading) return `<div class="triage-bar">
-        <button class="primary" data-triage="kept">Keep ${keyHint('inbox.keep')}</button>
-        <button class="ghost" data-triage="archived">Archive ${keyHint('inbox.archive')}</button>
-        <button class="ghost" data-skip>Skip ${keyHint('inbox.next')}</button>
-        <button class="ghost danger" data-triage="deleted">Delete ${keyHint('inbox.delete')}</button>
-        <button class="ghost ask-ai" data-inbox-ask aria-pressed="${!!ui.inboxChat}">Ask AI ${keyHint('inbox.ask')}</button>
-        <button class="ghost ask-ai" data-inbox-pad aria-pressed="${!!ui.inboxPad}">Scratchpad ${keyHint('inbox.pad')}</button>
+        <button class="primary" data-triage="kept" title="Keep (${esc(capsText('inbox.keep'))})">${ICON.keep}<span>Keep</span>${keyHint('inbox.keep')}</button>
+        <button class="ghost" data-triage="archived" title="Archive (${esc(capsText('inbox.archive'))})">${ICON.archive}<span>Archive</span>${keyHint('inbox.archive')}</button>
+        <button class="ghost" data-skip title="Skip (${esc(capsText('inbox.next'))})">${ICON.skip}<span>Skip</span>${keyHint('inbox.next')}</button>
+        <button class="ghost danger" data-triage="deleted" title="Delete (${esc(capsText('inbox.delete'))})">${ICON.delete}<span>Delete</span>${keyHint('inbox.delete')}</button>
+        <button class="ghost ask-ai" data-inbox-ask aria-pressed="${!!ui.inboxChat}" title="Ask AI (${esc(capsText('inbox.ask'))})">${ICON.ask}<span>Ask AI</span>${keyHint('inbox.ask')}</button>
+        <button class="ghost ask-ai" data-inbox-pad aria-pressed="${!!ui.inboxPad}" title="Scratchpad (${esc(capsText('inbox.pad'))})">${ICON.pad}<span>Scratchpad</span>${keyHint('inbox.pad')}</button>
         <span class="muted small">${idx + 1} of ${num.format(total)}</span>
       </div>`;
-  if (o.deleted) return `<div class="triage-bar"><button class="primary" data-read-restore>Restore</button><span class="muted small">In Trash · deleted for good in ${daysLeft(current)} days</span><button class="ghost" data-read-step="1">Next ${keyHint('read.next')}</button><span class="muted small">${idx + 1} of ${num.format(total)}</span></div>`;
+  if (o.deleted) return `<div class="triage-bar"><button class="primary" data-read-restore title="Restore">${ICON.restore}<span>Restore</span></button><span class="muted small">In Trash · deleted for good in ${daysLeft(current)} days</span><button class="ghost" data-read-step="1" title="Next (${esc(capsText('read.next'))})">${ICON.skip}<span>Next</span>${keyHint('read.next')}</button><span class="muted small">${idx + 1} of ${num.format(total)}</span></div>`;
   const t = o.triaged;
   return `<div class="triage-bar">
-        <button class="${o.read ? 'ghost' : 'primary'}" data-mark-read="${current.id}" aria-pressed="${!!o.read}">${o.read ? `Read ${readWhen(o.readAt)}` : 'Done reading'} ${keyHint('read.done')}</button>
-        <button class="ghost" data-stack="${current.id}" aria-pressed="${!!o.stackedAt}">${o.stackedAt ? 'On the stack' : 'Stack'} ${keyHint('read.stack')}</button>
-        <button class="ghost" data-read-triage="kept" aria-pressed="${t === 'kept'}">${t === 'kept' ? 'Kept' : 'Keep'} ${keyHint('read.keep')}</button>
-        <button class="ghost" data-read-triage="archived" aria-pressed="${t === 'archived'}">${t === 'archived' ? 'Archived' : 'Archive'} ${keyHint('read.archive')}</button>
-        <button class="ghost" data-read-step="1" ${idx + 1 >= total ? 'disabled' : ''}>Next ${keyHint('read.next')}</button>
-        <button class="ghost ask-ai" data-inbox-ask aria-pressed="${!!ui.inboxChat}">Ask AI ${keyHint('read.ask')}</button>
-        <button class="ghost ask-ai" data-inbox-pad aria-pressed="${!!ui.inboxPad}">Scratchpad ${keyHint('read.pad')}</button>
+        <button class="${o.read ? 'ghost' : 'primary'}" data-mark-read="${current.id}" aria-pressed="${!!o.read}" title="${o.read ? `Read ${readWhen(o.readAt)}` : 'Done reading'} (${esc(capsText('read.done'))})">${ICON.read}<span>${o.read ? `Read ${readWhen(o.readAt)}` : 'Done reading'}</span>${keyHint('read.done')}</button>
+        <button class="ghost" data-stack="${current.id}" aria-pressed="${!!o.stackedAt}" title="${o.stackedAt ? 'On the stack' : 'Stack'} (${esc(capsText('read.stack'))})">${ICON.stack}<span>${o.stackedAt ? 'On the stack' : 'Stack'}</span>${keyHint('read.stack')}</button>
+        <button class="ghost" data-read-triage="kept" aria-pressed="${t === 'kept'}" title="${t === 'kept' ? 'Kept' : 'Keep'} (${esc(capsText('read.keep'))})">${ICON.keep}<span>${t === 'kept' ? 'Kept' : 'Keep'}</span>${keyHint('read.keep')}</button>
+        <button class="ghost" data-read-triage="archived" aria-pressed="${t === 'archived'}" title="${t === 'archived' ? 'Archived' : 'Archive'} (${esc(capsText('read.archive'))})">${ICON.archive}<span>${t === 'archived' ? 'Archived' : 'Archive'}</span>${keyHint('read.archive')}</button>
+        <button class="ghost" data-read-step="1" ${idx + 1 >= total ? 'disabled' : ''} title="Next (${esc(capsText('read.next'))})">${ICON.skip}<span>Next</span>${keyHint('read.next')}</button>
+        <button class="ghost ask-ai" data-inbox-ask aria-pressed="${!!ui.inboxChat}" title="Ask AI (${esc(capsText('read.ask'))})">${ICON.ask}<span>Ask AI</span>${keyHint('read.ask')}</button>
+        <button class="ghost ask-ai" data-inbox-pad aria-pressed="${!!ui.inboxPad}" title="Scratchpad (${esc(capsText('read.pad'))})">${ICON.pad}<span>Scratchpad</span>${keyHint('read.pad')}</button>
         <span class="muted small">${idx + 1} of ${num.format(total)}</span>
       </div>`;
 }
@@ -70,7 +70,7 @@ export function renderInbox() {
       <div class="triage-dock">
       <div class="dock-meta">
         <div class="tag-editor" data-tags="${current.id}">${tagEditor(current)}</div>
-        <textarea class="scratchpad" data-scratchpad="${current.id}" rows="1" placeholder="Scratchpad — why you saved this, what to do with it">${esc(store.overrides[current.id]?.scratchpad || '')}</textarea>
+        <textarea class="scratchpad" data-scratchpad="${current.id}" rows="1" placeholder="Scratchpad">${esc(store.overrides[current.id]?.scratchpad || '')}</textarea>
       </div>
       ${dockBar(current, reading, idx, queue.length)}
       </div>

@@ -122,7 +122,6 @@
   .read-these { display: none; }
   .add-files { padding: 0 9px; flex: none; }
   .add-files span { display: none; }
-  .reading .triage-bar { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-  .reading .triage-bar [data-mark-read] { grid-column: span 2; }
+  .reading .triage-bar { grid-template-columns: repeat(7, minmax(0, 1fr)); }
   .doc-next { max-width: 100%; }
 }
