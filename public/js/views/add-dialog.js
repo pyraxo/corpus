@@ -106,7 +106,7 @@ async function run(item) {
     Object.assign(item, { id: res.id, title: res.title, duplicate: !!res.duplicate });
     await refreshAfterAdd([res.id]);
     item.state = res.duplicate ? 'duplicate' : 'done';
-    item.status = res.duplicate ? 'Already in Corpus' : describe(res);
+    item.status = res.duplicate ? 'Already in Corpus' : res.parseFailed ? 'Couldn’t read the page — saved as a link; open it to upload as-is' : describe(res);
     paint();
     if (res.job && !res.duplicate) {
       item.status = `${describe(res)} · Jev is tagging…`; paint();

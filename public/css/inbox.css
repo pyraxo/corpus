@@ -25,6 +25,7 @@
 .triage-scroll { flex: 1; overflow-y: auto; padding: 0 40px; }
 .triage-dock { border-top: 1px solid var(--rule); background: var(--bg); }
 .dock-meta { display: grid; gap: 8px; padding: 12px 40px 0; }
+.dock-meta > * { min-width: 0; }
 .triage-dock .suggest { top: auto; bottom: 32px; }
 .triage-dock .scratchpad { display: block; min-height: 34px; max-height: 180px; resize: none; transition: min-height 0.15s; }
 .triage-dock .scratchpad:not(:placeholder-shown) { min-height: 64px; }

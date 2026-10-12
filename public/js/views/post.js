@@ -12,7 +12,7 @@ import { uploadCover } from '../features/uploads.js';
 import { avatar, byline, bytes, formatBadge, fullDate, host, img, richText } from '../ui/format.js';
 import { inQueue } from './dialog.js';
 import { refreshCards } from './library.js';
-import { paintDock } from './reader/index.js';
+import { paintDock, parseFailedNote } from './reader/index.js';
 import { mountDoc } from '../features/doc-reader.js';
 
 // "By Ethan Mollick · One Useful Thing · March 3, 2026 · 12 min read · Open ↗"
@@ -96,7 +96,7 @@ export function readerContent(r, { docked = false } = {}) {
     </div>
     ${linksOut(r) ? `<section class="r-linked" data-linked="${esc(r.id)}" hidden></section>` : ''}
     <footer class="r-foot">
-      ${readerActions(r)}
+      ${readerActions(r, { docked })}
       ${highlightsSection(r)}
       ${docked ? '' : `<div class="r-section"><h4>Tags</h4><div class="tag-editor" data-tags="${r.id}">${tagEditor(r)}</div></div>
       <div class="r-section"><h4>Scratchpad</h4><textarea class="scratchpad" data-scratchpad="${r.id}" rows="3" placeholder="Why you saved this, what to try, questions it raises. Agents can write here too.">${esc(o.scratchpad || '')}</textarea></div>`}
@@ -135,7 +135,7 @@ function docContent(r, { docked = false } = {}) {
     </header>
     <div class="doc-mount" data-doc="${esc(r.id)}"></div>
     <footer class="r-foot">
-      ${readerActions(r)}
+      ${readerActions(r, { docked })}
       ${highlightsSection(r)}
       ${docked ? '' : `<div class="r-section"><h4>Tags</h4><div class="tag-editor" data-tags="${r.id}">${tagEditor(r)}</div></div>
       <div class="r-section"><h4>Scratchpad</h4><textarea class="scratchpad" data-scratchpad="${r.id}" rows="3" placeholder="Why you saved this, what to try, questions it raises. Agents can write here too.">${esc(o.scratchpad || '')}</textarea></div>`}
@@ -179,11 +179,12 @@ function readerMarks(r, { docked = false } = {}) {
       <button class="mark" data-mark-read="${r.id}" aria-pressed="${!!o.read}">${ICON.read}<span>${o.read ? `Read ${readWhen(o.readAt)}` : 'Mark as read'}</span>${!o.read && o.readAt ? `<span class="mark-note">last read ${readWhen(o.readAt)}</span>` : ''}${hint('reader.done')}</button>
     </div>`;
 }
-function readerActions(r) {
+function readerActions(r, { docked = false } = {}) {
   const o = store.overrides[r.id] || {};
-  if (o.deleted) return `<div class="r-actions"><button class="primary" data-act="restore">Restore</button><span class="muted small">In Trash · deleted for good in ${daysLeft(r)} days</span></div>`;
+  const note = docked ? '' : parseFailedNote(r);
+  if (o.deleted) return `${note}<div class="r-actions"><button class="primary" data-act="restore">Restore</button><span class="muted small">In Trash · deleted for good in ${daysLeft(r)} days</span></div>`;
   const t = o.triaged;
-  return `<div class="r-actions">
+  return `${note}<div class="r-actions">
     <button class="${o.read ? 'ghost' : 'primary'} done" data-mark-read="${r.id}" aria-pressed="${!!o.read}">${o.read ? `Read ${readWhen(o.readAt)}` : 'Done reading'}${keyHint('reader.done')}</button>
     <button class="ghost" data-act="kept" aria-pressed="${t === 'kept'}">${t === 'kept' ? 'Kept' : 'Keep'}${keyHint('reader.keep')}</button>
     <button class="ghost" data-act="archived" aria-pressed="${t === 'archived'}">${t === 'archived' ? 'Archived' : 'Archive'}${keyHint('reader.archive')}</button>

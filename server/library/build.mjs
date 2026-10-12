@@ -219,7 +219,9 @@ export async function build({ log = console.log } = {}) {
       enrichedAt: enr?.fetchedAt || null,
       classifiedBy: jev ? jev.model : null,
       // Files: the document's metadata; and tags Jev thought worth adding to the taxonomy.
-      ...(item.doc && { doc: item.doc, suggested: jev?.suggest?.length ? jev.suggest : null })
+      ...(item.doc && { doc: item.doc, suggested: jev?.suggest?.length ? jev.suggest : null }),
+      // A saved link whose page couldn't be read as text: kept as a card only, until "Upload as-is".
+      ...(item.parseFailed && { parseFailed: true })
     });
     if (needsQuote(enr)) quotePending.push({ id, hint: 0 });
   }

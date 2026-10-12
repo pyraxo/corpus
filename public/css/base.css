@@ -66,7 +66,7 @@ kbd { font: 500 10px/1 var(--mono); color: var(--ink-3); border: 1px solid var(-
 .inbox-empty { grid-column: 1 / -1; }
 @media (max-width: 860px) {
   :root { --head: 52px; --nav: calc(56px + env(safe-area-inset-bottom)); }
-  body { padding-bottom: var(--nav); }
+  body { padding-bottom: var(--nav); overflow-x: hidden; }
   body.rail-locked { overflow: hidden; }
 }
 @media (display-mode: standalone) {

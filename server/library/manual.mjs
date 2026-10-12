@@ -22,21 +22,35 @@ export async function addManual({ url, title, text }, { maxSortIndex = 0n } = {}
   const existing = items.find(i => i.id === id);
   if (existing) return { ...existing, duplicate: true };
   const page = text ? null : await fetchPage(url);
-  if (!text && !page?.ok) throw new Error(page?.status ? `The page answered ${page.status}` : 'Couldn’t read that page');
+  const ok = !!text || !!page?.ok;
   const a = page?.article;
-  const body = text || page.text;
+  const body = text || page?.text || '';
+  const fallbackTitle = title || a?.title || page?.title || (body.match(/^#{1,2}\s+(.+)$/m) || [])[1]?.trim() || body.split('\n').find(l => l.trim().length > 8)?.trim().slice(0, 120) || host(url);
   const item = {
     id, url: page?.url || url, provider: 'web',
-    title: title || a?.title || page?.title || (body.match(/^#{1,2}\s+(.+)$/m) || [])[1]?.trim() || body.split('\n').find(l => l.trim().length > 8)?.trim().slice(0, 120) || host(url),
+    title: fallbackTitle,
     text: body,
     site: host(page?.url || url),
     createdAt: new Date().toISOString(),
     sortIndex: String(maxSortIndex + 1n),
     // The page as an article: kept whenever it has a body of blocks, shown in the reader like an X article.
-    ...(a?.blocks?.length && { article: { siteName: a.siteName, byline: a.byline, published: a.published, cover: a.cover, description: a.description, lang: a.lang, words: a.words, isArticle: a.isArticle, blocks: a.blocks } })
+    ...(a?.blocks?.length && { article: { siteName: a.siteName, byline: a.byline, published: a.published, cover: a.cover, description: a.description, lang: a.lang, words: a.words, isArticle: a.isArticle, blocks: a.blocks } }),
+    // The page couldn't be read as text: saved anyway, as a link card only (asSource still builds
+    // one from the title and whatever OG metadata turned up). "Upload as-is" (acceptManual) clears
+    // this once the user confirms, and classification runs from the card instead of body text.
+    ...(!ok && { parseFailed: true })
   };
   items.push(item);
   await writeManual(items);
+  return item;
+}
+// The page couldn't be read in full, but the user wants it saved anyway: clear the flag so it's
+// treated like any other link (an embed/card, classified from its title and card, not its body).
+export async function acceptManual(id) {
+  const items = await readManual();
+  const item = items.find(i => i.id === id);
+  if (!item) return null;
+  if (item.parseFailed) { delete item.parseFailed; item.acceptedAt = new Date().toISOString(); await writeManual(items); }
   return item;
 }
 
@@ -111,7 +125,8 @@ export function asSource(item) {
     line: {
       id: item.id, tweetId: item.id, provider: 'web', url: item.url, text: summary,
       authorHandle: item.site, authorName: a?.byline || site, authorProfileImageUrl: `https://www.google.com/s2/favicons?domain=${item.site}&sz=64`,
-      postedAt: a?.published || item.createdAt, bookmarkedAt: item.createdAt, syncedAt: item.createdAt, links: [item.url], sortIndex: item.sortIndex, engagement: {}
+      postedAt: a?.published || item.createdAt, bookmarkedAt: item.createdAt, syncedAt: item.createdAt, links: [item.url], sortIndex: item.sortIndex, engagement: {},
+      parseFailed: !!item.parseFailed
     },
     enrichment: {
       id: item.id, status: 'ok', fetchedAt: item.createdAt,

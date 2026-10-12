@@ -21,7 +21,7 @@ import { closeReader, openBookmark, openReader, restoreReader, showReaderTab, st
 import { renderHighlights } from '../views/highlights.js';
 import { paintResults, renderLibrary, renderRail, setRail, syncUrl } from '../views/library.js';
 import { fitScratchpad, repaintBookmark } from '../views/post.js';
-import { inboxStep, paintDock, pickQueued, readTriage, renderInbox, setMode, triageCurrent } from '../views/reader/index.js';
+import { acceptAsIs, inboxStep, paintDock, pickQueued, readDelete, readTriage, renderInbox, setMode, triageCurrent } from '../views/reader/index.js';
 import { keyTestResult, loadSkills, renderSettings, skillOp } from '../views/settings.js';
 import { renderTaxonomy } from '../views/taxonomy.js';
 
@@ -72,6 +72,7 @@ export function setupEvents() {
     if (d.mode) { setMode(d.mode); return; }
     if (d.readStep) { inboxStep(Number(d.readStep)); return; }
     if (d.readTriage) { await readTriage(d.readTriage); return; }
+    if (d.readDelete !== undefined) { await readDelete(); return; }
     if (d.readRestore !== undefined) { await saveOverride([ui.inboxId], { deleted: null }, { label: 'Restore' }); updateInboxCount(); paintDock(); repaintBookmark(ui.inboxId); toast('Restored', { undo: true }); return; }
     if (d.readAll !== undefined) { const first = ui.results?.[0]; if (first) { const was = prefs.openIn; prefs.openIn = 'reader'; openBookmark(first.id, ui.results); prefs.openIn = was; } return; }
     if (d.addFiles !== undefined) { openAddDialog(); return; }
@@ -134,6 +135,7 @@ export function setupEvents() {
       renderSettings(); return;
     }
     if (d.act) { if (d.act === 'restore') await restoreReader(); else await triageReader(d.act); return; }
+    if (d.accept) { await acceptAsIs(d.accept); return; }
     if (d.stack) { await toggleStack(d.stack); return; }
     if (d.markRead) { await toggleRead(d.markRead); return; }
     if (d.undo !== undefined) { await undo(); return; }

@@ -4,7 +4,7 @@
 import { readState, writeState } from '../../library/state.mjs';
 import { slugify } from '../../library/skills.mjs';
 import { recordText, classifyFile, classifyMany } from '../../classify/jev.mjs';
-import { addManual } from '../../library/manual.mjs';
+import { acceptManual, addManual } from '../../library/manual.mjs';
 import { ingestFile, updateDoc, maxSortIndex, FILE_TYPES } from '../../files/store.mjs';
 import crypto from 'node:crypto';
 
@@ -152,31 +152,47 @@ export function createToolkit({ getIndex, rebuild, enricher, log = () => {} }) {
   // Where a highlight sits in a book or PDF, for agents and lists.
   const whereOf = (r, h) => !r.doc || !h.loc ? undefined : h.loc.page != null ? `page ${h.loc.page + 1} (section ${h.loc.page})` : h.loc.ch != null ? `section ${h.loc.ch}` : undefined;
 
+  // Tag a saved link with Jev in the background (from its article text, or just its title and
+  // card when the page couldn't be read); id must already be in the rebuilt index.
+  function tagLink(id) {
+    if (!process.env.TYPESAFE_API_KEY) return null;
+    tagging.add(id);
+    const job = { id: crypto.randomUUID().slice(0, 8), kind: 'link-tagging', bookmark: id, status: 'running', startedAt: new Date().toISOString() };
+    jobs.set(job.id, job);
+    (async () => {
+      try {
+        const c = await ctx();
+        const res = await classifyMany([c.ix.byId.get(id)], c.ix.concepts, { concurrency: 1, log });
+        if (!res.ok) throw new Error('Jev couldn’t classify it');
+        const done = await rebuild('link:jev');
+        Object.assign(job, { status: 'done', tags: (done.records.find(r => r.id === id)?.tags || []).filter(t => /^(topic|kind):/.test(t.id)).map(t => t.id) });
+      } catch (e) { Object.assign(job, { status: 'failed', error: e.message }); log(`[links] tagging ${id}: ${e.message}`); }
+      tagging.delete(id);
+      job.finishedAt = new Date().toISOString();
+    })();
+    return job;
+  }
   // A new file: parse and store it, add it to the index, then tag it with Jev in the background.
-  // A web page by link: read as an article, saved, added to the index, and tagged by Jev in the background.
+  // A web page by link: read as an article, saved, added to the index, and tagged by Jev in the
+  // background — unless the page couldn't be read (parseFailed): saved as a card only, untagged
+  // until the user says to upload it as-is (acceptLink).
   async function saveLink({ url, title, text }) {
     const item = await addManual({ url, title, text }, { maxSortIndex: await maxSortIndex() });
     const about = { id: item.id, title: item.title, site: item.site, words: item.article?.words ?? item.text.split(/\s+/).length, isArticle: !!item.article?.isArticle };
     if (item.duplicate) return { ...about, duplicate: true };
     await rebuild('link');
-    let job = null;
-    if (process.env.TYPESAFE_API_KEY) {
-      tagging.add(item.id);
-      job = { id: crypto.randomUUID().slice(0, 8), kind: 'link-tagging', bookmark: item.id, status: 'running', startedAt: new Date().toISOString() };
-      jobs.set(job.id, job);
-      (async () => {
-        try {
-          const c = await ctx();
-          const res = await classifyMany([c.ix.byId.get(item.id)], c.ix.concepts, { concurrency: 1, log });
-          if (!res.ok) throw new Error('Jev couldn’t classify it');
-          const done = await rebuild('link:jev');
-          Object.assign(job, { status: 'done', tags: (done.records.find(r => r.id === item.id)?.tags || []).filter(t => /^(topic|kind):/.test(t.id)).map(t => t.id) });
-        } catch (e) { Object.assign(job, { status: 'failed', error: e.message }); log(`[links] tagging ${item.id}: ${e.message}`); }
-        tagging.delete(item.id);
-        job.finishedAt = new Date().toISOString();
-      })();
-    }
+    if (item.parseFailed) return { ...about, parseFailed: true, job: null };
+    const job = tagLink(item.id);
     return { ...about, job: job?.id || null };
+  }
+  // The page couldn't be read, but the user wants it saved anyway: clear parseFailed (it becomes
+  // an ordinary link card) and classify it from its title and card instead of body text.
+  async function acceptLink(id) {
+    const item = await acceptManual(id);
+    if (!item) throw new Error(`No saved link ${id}`);
+    await rebuild('link:accept');
+    const job = tagLink(id);
+    return { id: item.id, title: item.title, job: job?.id || null };
   }
 
   async function ingest(data, name) {
@@ -230,5 +246,5 @@ export function createToolkit({ getIndex, rebuild, enricher, log = () => {} }) {
 
   // ── tool definitions ──
 
-  return { getIndex, rebuild, enricher, log, jobs, tagging, facetOf, effectiveTags, statusOf, ctx, resolveConcept, compact, select, filterProps, selector, applyPatch, createConceptRaw, whereOf, ingest, saveLink, fetchFile, needConfirm };
+  return { getIndex, rebuild, enricher, log, jobs, tagging, facetOf, effectiveTags, statusOf, ctx, resolveConcept, compact, select, filterProps, selector, applyPatch, createConceptRaw, whereOf, ingest, saveLink, acceptLink, fetchFile, needConfirm };
 }

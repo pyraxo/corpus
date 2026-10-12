@@ -6,7 +6,7 @@ import { writeState } from '../../../library/state.mjs';
 const CONFIRM_OVER = 25;
 
 export default function bookmarksTools(kit) {
-  const { ctx, select, selector, applyPatch, ingest, fetchFile, needConfirm, saveLink, rebuild } = kit;
+  const { ctx, select, selector, applyPatch, ingest, fetchFile, needConfirm, saveLink, acceptLink, rebuild } = kit;
   return [
     {
       name: 'update_bookmark', write: true, description: 'Change one bookmark: add/remove tags (names, paths or ids; unknown names become new personal labels), set triage (kept | archived | untriaged), replace or clear its scratchpad (to add to it instead, use write_scratchpad), or restore a deleted bookmark (deleted: false).',
@@ -21,12 +21,17 @@ export default function bookmarksTools(kit) {
       }
     },
     {
-      name: 'edit_bookmark', write: true, description: 'Edit what a bookmark says. Links saved by URL: title, author, site, published (YYYY-MM-DD), cover (an image URL), description, and blocks: the whole article body, as [{type: p|h2|h3|h4|li|oli|quote|code|caption, text} | {type: image, url} | {type: divider}]. action "restore" goes back to the page as it was first read; "reread" reads the page again from the web. Files: title, author (comma-separated for several), publisher, published, description. Posts from X: title only (the post itself comes from X).',
-      input: { type: 'object', properties: { id: { type: 'string' }, title: { type: 'string' }, author: { type: 'string' }, site: { type: 'string' }, published: { type: 'string' }, cover: { type: 'string' }, description: { type: 'string' }, blocks: { type: 'array', items: { type: 'object' } }, action: { type: 'string', enum: ['save', 'restore', 'reread'] } }, required: ['id'] },
+      name: 'edit_bookmark', write: true, description: 'Edit what a bookmark says. Links saved by URL: title, author, site, published (YYYY-MM-DD), cover (an image URL), description, and blocks: the whole article body, as [{type: p|h2|h3|h4|li|oli|quote|code|caption, text} | {type: image, url} | {type: divider}]. action "restore" goes back to the page as it was first read; "reread" reads the page again from the web; "accept" is for a link whose page couldn\'t be read (parseFailed): keeps it as a title/card embed and classifies it from that instead of body text. Files: title, author (comma-separated for several), publisher, published, description. Posts from X: title only (the post itself comes from X).',
+      input: { type: 'object', properties: { id: { type: 'string' }, title: { type: 'string' }, author: { type: 'string' }, site: { type: 'string' }, published: { type: 'string' }, cover: { type: 'string' }, description: { type: 'string' }, blocks: { type: 'array', items: { type: 'object' } }, action: { type: 'string', enum: ['save', 'restore', 'reread', 'accept'] } }, required: ['id'] },
       run: async (a) => {
         const c = await ctx(); const r = c.ix.byId.get(String(a.id));
         if (!r) throw new Error(`No bookmark ${a.id}`);
         const has = (k) => k in a && a[k] !== undefined;
+        if (a.action === 'accept') {
+          if (r.provider !== 'web') throw new Error(`${r.id} isn't a saved link`);
+          const res = await acceptLink(r.id);
+          return { ok: true, id: res.id, title: res.title, summary: `Saved “${res.title}” as an embed${res.job ? '; classifying now' : ''}` };
+        }
         if (r.provider === 'web') {
           const item = a.action === 'restore' ? await restoreManual(r.id) : a.action === 'reread' ? await rereadManual(r.id) : await editManual(r.id, Object.fromEntries(['title', 'author', 'site', 'published', 'cover', 'description', 'blocks'].filter(has).map(k => [k, a[k]])));
           if (!item) throw new Error(`${r.id} isn't a saved link`);

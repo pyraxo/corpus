@@ -6,10 +6,11 @@ import { $, esc, num } from '../../core/dom.js';
 import { prefs } from '../../core/prefs.js';
 import { store, ui, view } from '../../core/state.js';
 import { saveOverride } from '../../data/history.js';
-import { isDoc, readWhen } from '../../data/library.js';
+import { api, isDoc, readWhen } from '../../data/library.js';
 import { daysLeft, statusOk } from '../../data/query.js';
 import { loadInboxChat } from '../../features/chat.js';
 import { inboxPadHtml, loadPad, pad } from '../../features/scratchpad.js';
+import { refreshAfterAdd } from '../../features/uploads.js';
 import { sideDock } from '../../features/sidebar.js';
 import { toast } from '../../ui/toast.js';
 import { captureNow } from '../dialog.js';
@@ -42,11 +43,25 @@ function dockBar(current, reading, idx, total) {
         <button class="ghost" data-stack="${current.id}" aria-pressed="${!!o.stackedAt}" title="${o.stackedAt ? 'On the stack' : 'Stack'} (${esc(capsText('read.stack'))})">${ICON.stack}<span>${o.stackedAt ? 'On the stack' : 'Stack'}</span>${keyHint('read.stack')}</button>
         <button class="ghost" data-read-triage="kept" aria-pressed="${t === 'kept'}" title="${t === 'kept' ? 'Kept' : 'Keep'} (${esc(capsText('read.keep'))})">${ICON.keep}<span>${t === 'kept' ? 'Kept' : 'Keep'}</span>${keyHint('read.keep')}</button>
         <button class="ghost" data-read-triage="archived" aria-pressed="${t === 'archived'}" title="${t === 'archived' ? 'Archived' : 'Archive'} (${esc(capsText('read.archive'))})">${ICON.archive}<span>${t === 'archived' ? 'Archived' : 'Archive'}</span>${keyHint('read.archive')}</button>
+        <button class="ghost danger" data-read-delete title="Delete (${esc(capsText('read.delete'))})">${ICON.delete}<span>Delete</span>${keyHint('read.delete')}</button>
         <button class="ghost" data-read-step="1" ${idx + 1 >= total ? 'disabled' : ''} title="Next (${esc(capsText('read.next'))})">${ICON.skip}<span>Next</span>${keyHint('read.next')}</button>
         <button class="ghost ask-ai" data-inbox-ask aria-pressed="${!!ui.inboxChat}" title="Ask AI (${esc(capsText('read.ask'))})">${ICON.ask}<span>Ask AI</span>${keyHint('read.ask')}</button>
         <button class="ghost ask-ai" data-inbox-pad aria-pressed="${!!ui.inboxPad}" title="Scratchpad (${esc(capsText('read.pad'))})">${ICON.pad}<span>Scratchpad</span>${keyHint('read.pad')}</button>
         <span class="muted small">${idx + 1} of ${num.format(total)}</span>
       </div>`;
+}
+// A saved link whose page couldn't be read in full: saved as a title/card embed; upload it as-is
+// to keep it that way for good and classify it from the title and card instead of body text.
+export function parseFailedNote(r) {
+  if (!r.parseFailed) return '';
+  return `<div class="parse-failed"><span>Couldn’t read this page’s text — saved as a link only.</span><button type="button" class="ghost small" data-accept="${esc(r.id)}">Upload as-is</button></div>`;
+}
+export async function acceptAsIs(id) {
+  try {
+    await api('/api/ops', { method: 'POST', body: { tool: 'edit_bookmark', args: { id, action: 'accept' } } });
+    await refreshAfterAdd([id]);
+    toast('Saved as an embed · classifying now');
+  } catch (e) { toast(`Not saved: ${e.message}`); }
 }
 export function renderInbox() {
   const reading = ui.view === 'read';
@@ -69,6 +84,7 @@ export function renderInbox() {
       <div class="triage-scroll"><div class="reader-body inline${isDoc(current) ? ' has-doc' : ''}" id="triage-body">${readerContent(current, { docked: true })}</div></div>
       <div class="triage-dock">
       <div class="dock-meta">
+        ${parseFailedNote(current)}
         <div class="tag-editor" data-tags="${current.id}">${tagEditor(current)}</div>
         <textarea class="scratchpad" data-scratchpad="${current.id}" rows="1" placeholder="Scratchpad">${esc(store.overrides[current.id]?.scratchpad || '')}</textarea>
       </div>
