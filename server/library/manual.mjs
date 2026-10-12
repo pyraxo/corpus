@@ -33,8 +33,10 @@ export async function addManual({ url, title, text }, { maxSortIndex = 0n } = {}
     site: host(page?.url || url),
     createdAt: new Date().toISOString(),
     sortIndex: String(maxSortIndex + 1n),
-    // The page as an article: kept whenever it has a body of blocks, shown in the reader like an X article.
-    ...(a?.blocks?.length && { article: { siteName: a.siteName, byline: a.byline, published: a.published, cover: a.cover, description: a.description, lang: a.lang, words: a.words, isArticle: a.isArticle, blocks: a.blocks } }),
+    // The page's metadata (and its body of blocks, when there is one): kept whenever the page was
+    // read at all, so a cover image or description found in its OG tags survives even when there's
+    // no body to read (asSource falls back to a link card for those; see the words check there).
+    ...(a && { article: { siteName: a.siteName, byline: a.byline, published: a.published, cover: a.cover, description: a.description, lang: a.lang, words: a.words, isArticle: a.isArticle, blocks: a.blocks } }),
     // The page couldn't be read as text: saved anyway, as a link card only (asSource still builds
     // one from the title and whatever OG metadata turned up). "Upload as-is" (acceptManual) clears
     // this once the user confirms, and classification runs from the card instead of body text.
