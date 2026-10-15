@@ -1,12 +1,19 @@
 # corpus
 
-A self-hosted home for your saved bookmarks. Corpus reads X bookmarks from [FieldTheory](https://github.com/afar1/fieldtheory-cli), fetches full threads, tags them with [TypeSafe Jev](https://typesafe.ai), and lets you read, highlight, triage, and ask questions about them. Drop in your own images, PDFs and EPUB or MOBI books too: they get a reader with contents, highlights and notes, and Jev tags them and suggests new topics. It keeps its own copy of every post's images, so nothing is lost when a post is deleted on X.
+A self-hosted home for your saved bookmarks.
 
 ![Corpus demo](docs/demo.gif)
 
 [Watch the demo with sound (1:27)](docs/demo.mp4)
 
-Corpus keeps its own state in `data/` and never writes to your FieldTheory files.
+## Features
+
+- Pulls X bookmarks from [FieldTheory](https://github.com/afar1/fieldtheory-cli) and unrolls full threads
+- Tags everything with [TypeSafe Jev](https://typesafe.ai), and suggests new topics
+- A reader with contents, highlights, and notes for PDFs, EPUBs, MOBI, and images too
+- Keeps its own copy of every post's images, so nothing is lost when it's deleted on X
+- Keeps its own state in `data/`; never writes to your FieldTheory files
+- Connects to any MCP-capable agent for chat and search over your library
 
 ## Getting started
 
